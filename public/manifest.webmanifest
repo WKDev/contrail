@@ -1,6 +1,6 @@
 {
-  "name": "드론 라이브러리",
-  "short_name": "드론 라이브러리",
+  "name": "Contrail",
+  "short_name": "Contrail",
   "description": "드론 영상 자동 병합 · HUD 오버레이 · 고글 OSD 합성",
   "start_url": "./",
   "scope": "./",

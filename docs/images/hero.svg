@@ -20,6 +20,11 @@
       <stop offset="0" stop-color="#7a4e26"/>
       <stop offset="1" stop-color="#5d3a1b"/>
     </linearGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#cfe0ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.9"/>
+    </linearGradient>
     <clipPath id="ati"><circle cx="0" cy="0" r="92"/></clipPath>
     <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.09"/>
@@ -31,6 +36,10 @@
   <rect width="1280" height="420" rx="28" fill="url(#glowA)"/>
   <rect width="1280" height="420" rx="28" fill="url(#glowB)"/>
 
+  <!-- 비행운 -->
+  <path d="M-20 300 C 220 250, 420 120, 760 96 S 1140 40, 1300 30" fill="none" stroke="url(#trail)" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+  <path d="M-20 318 C 230 268, 430 140, 760 116 S 1140 60, 1300 50" fill="none" stroke="url(#trail)" stroke-width="5" stroke-linecap="round" opacity="0.35"/>
+
   <!-- 왼쪽: 아이콘 · 제목 -->
   <g transform="translate(72 74)">
     <rect width="76" height="76" rx="20" fill="url(#icon)"/>
@@ -41,9 +50,9 @@
       <circle cx="160" cy="352" r="52"/><circle cx="352" cy="352" r="52"/>
     </g>
   </g>
-  <text x="72" y="214" fill="#f4f6fb" font-size="58" font-weight="800" letter-spacing="-1.5">Drone Library</text>
-  <text x="74" y="256" fill="#aab4c6" font-size="24" font-weight="500">드론 라이브러리 — 비행 영상 병합 · HUD 오버레이 · 고글 OSD</text>
-  <text x="74" y="290" fill="#7f8aa0" font-size="18">설치 없이 브라우저에서. 영상은 내 PC 밖으로 나가지 않습니다.</text>
+  <text x="72" y="214" fill="#f4f6fb" font-size="64" font-weight="800" letter-spacing="-1.5">Contrail</text>
+  <text x="74" y="256" fill="#aab4c6" font-size="24" font-weight="500">비행이 남긴 흔적을, 한 편의 영상으로</text>
+  <text x="74" y="290" fill="#7f8aa0" font-size="18">비행 영상 병합 · HUD 오버레이 · 고글 OSD — 설치 없이 브라우저에서</text>
 
   <!-- 칩 -->
   <g font-size="15" font-weight="600">

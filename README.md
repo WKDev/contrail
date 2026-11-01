@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/hero.svg" alt="Drone Library — 비행 영상 병합 · HUD 오버레이 · 고글 OSD" width="100%">
+  <img src="docs/images/hero.svg" alt="Contrail — 비행 영상 병합 · HUD 오버레이 · 고글 OSD" width="100%">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   <img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-f59e0b">
 </p>
 
-**드론 라이브러리**는 SD 카드에 흩어진 드론 영상을 **비행 단위로 묶어 이어붙이고**, 영상 속 비행 데이터로 **HUD 계기판을 입히고**, **고글 녹화의 OSD**까지 합성해 주는 웹앱입니다.
+**Contrail**(컨트레일, 비행운)은 비행이 남긴 흔적을 한 편의 영상으로 만듭니다. SD 카드에 흩어진 드론 영상을 **비행 단위로 묶어 이어붙이고**, 영상 속 비행 데이터로 **HUD 계기판을 입히고**, **고글 녹화의 OSD**까지 합성해 주는 웹앱입니다.
 설치도 서버도 없습니다. 브라우저가 내 PC의 폴더를 직접 읽고 쓰며, 영상은 PC 밖으로 나가지 않습니다.
 
 > 기본 대상은 **DJI Avata 2 + DJI Goggles 3** 입니다. 두 기기의 실제 녹화로 만들고 검증했습니다.

@@ -4,7 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 export type Lang = "ko" | "en";
 
 const ko = {
-  appName: "드론 라이브러리",
+  appName: "Contrail",
   "nav.all": "모든 비행",
   "nav.pending": "병합 대기",
   "nav.done": "완성된 영상",
@@ -324,7 +324,7 @@ const ko = {
 type Key = keyof typeof ko;
 
 const en: Record<Key, string> = {
-  appName: "Drone Library",
+  appName: "Contrail",
   "nav.all": "All flights",
   "nav.pending": "To merge",
   "nav.done": "Finished videos",

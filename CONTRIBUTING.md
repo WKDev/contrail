@@ -1,6 +1,6 @@
 # 기여 안내 · Contributing
 
-드론 라이브러리에 관심 가져 주셔서 고맙습니다. 이슈, PR, 샘플 공유, 번역, 아이디어 모두 환영합니다.
+Contrail에 관심 가져 주셔서 고맙습니다. 이슈, PR, 샘플 공유, 번역, 아이디어 모두 환영합니다.
 English is welcome too. Write issues and PRs in whichever language you're comfortable with.
 
 ## 이슈 올리기

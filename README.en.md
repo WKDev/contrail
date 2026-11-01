@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/hero.svg" alt="Drone Library — flight video merge · HUD overlay · goggles OSD" width="100%">
+  <img src="docs/images/hero.svg" alt="Contrail — flight video merge · HUD overlay · goggles OSD" width="100%">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   <img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-f59e0b">
 </p>
 
-**Drone Library** is a web app that takes the clips scattered across your drone's SD card, **groups and joins them per flight**, **draws a HUD** from the flight data embedded in the video, and **composites the OSD from your goggles recording** on top.
+**Contrail** turns the trail your flight leaves behind into one finished video. It takes the clips scattered across your drone's SD card, **groups and joins them per flight**, **draws a HUD** from the flight data embedded in the video, and **composites the OSD from your goggles recording** on top.
 There's nothing to install and no server. The browser reads and writes your local folder directly, and your footage never leaves your computer.
 
 > The primary target is **DJI Avata 2 + DJI Goggles 3**. The app was built and verified on real recordings from both devices.
