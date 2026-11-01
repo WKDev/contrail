@@ -1,0 +1,32 @@
+name: 버그 제보 · Bug report
+description: 예상과 다르게 동작했어요 · Something didn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요? · What happened?
+      description: 무엇을 눌렀고, 무엇을 기대했고, 실제로 어떻게 됐는지 · Steps, expected, actual
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: 브라우저 · Browser
+      placeholder: Chrome 142 / Edge 142, Windows 11 / macOS 15
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 기체 · 고글 · Aircraft / goggles
+      placeholder: Avata 2 + Goggles 3 (펌웨어 버전 · firmware)
+  - type: textarea
+    id: error
+    attributes:
+      label: 오류 내용 · Error details
+      description: 앱 오류 화면의 "오류 내용 복사" 결과를 붙여 주세요 · Paste from "Copy error details"
+      render: text
+  - type: markdown
+    attributes:
+      value: 영상·비행기록에는 촬영 위치와 기체 시리얼이 들어 있습니다. 공개해도 괜찮은 파일만 올려 주세요. · Videos and flight records contain GPS location and aircraft serials. Share only what you're comfortable making public.

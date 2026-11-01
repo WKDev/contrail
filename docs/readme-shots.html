@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>readme shots</title>
+<body style="margin:0;background:#000">
+<script type="module">
+  // README 그림용 임시 페이지: 가짜 비행 데이터 + 그린 풍경 위에 실제 drawHud
+  import { drawHud, applyTemplate, THEMES } from "/src/hud.ts";
+  import { sampleAt } from "/src/telemetry.ts";
+  import { buildTrack } from "/src/map.ts";
+  import { defaultLayout } from "/src/store.ts";
+
+  const N = 1200, dt = 0.1;
+  const tel = { t: new Float64Array(N), pitch: new Float32Array(N), roll: new Float32Array(N), yaw: new Float32Array(N), vx: new Float32Array(N), vy: new Float32Array(N), vz: new Float32Array(N), lat: new Float64Array(N), lon: new Float64Array(N), relAlt: new Float32Array(N) };
+  let lat = 46.55, lon = 8.03, hdg = 20;
+  for (let i = 0; i < N; i++) {
+    const t = i * dt;
+    hdg += Math.sin(t / 9) * 1.4 + 0.35;
+    const sp = 14 + 6 * Math.sin(t / 7);
+    tel.t[i] = t; tel.yaw[i] = ((hdg + 540) % 360) - 180;
+    tel.roll[i] = 18 * Math.sin(t / 9 + 0.5); tel.pitch[i] = -6 + 4 * Math.sin(t / 5);
+    tel.vx[i] = sp * Math.cos(hdg * Math.PI / 180); tel.vy[i] = sp * Math.sin(hdg * Math.PI / 180); tel.vz[i] = 2.2 * Math.cos(t / 6);
+    lat += (tel.vx[i] * dt) / 111320; lon += (tel.vy[i] * dt) / (111320 * Math.cos(lat * Math.PI / 180));
+    tel.lat[i] = lat; tel.lon[i] = lon; tel.relAlt[i] = 62 + 25 * Math.sin(t / 15);
+  }
+  const track = buildTrack(tel);
+
+  // 결정적 난수
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  function landscape(ctx, W, H, roll, pitch, palette) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2 + pitch * 9);
+    ctx.rotate((-roll * Math.PI) / 180);
+    ctx.translate(-W / 2, -H / 2);
+    const X0 = -W, X1 = 2 * W, hz = H * 0.5;
+    const sky = ctx.createLinearGradient(0, -H, 0, hz);
+    palette.sky.forEach(([o, c]) => sky.addColorStop(o, c));
+    ctx.fillStyle = sky; ctx.fillRect(X0, -H, X1 - X0, hz + H);
+    const sun = ctx.createRadialGradient(W * 0.68, hz - 40, 0, W * 0.68, hz - 40, 520);
+    sun.addColorStop(0, palette.sun); sun.addColorStop(1, "rgba(255,200,150,0)");
+    ctx.fillStyle = sun; ctx.fillRect(X0, -H, X1 - X0, 2 * H);
+    seed = 7;
+    palette.ridges.forEach((col, k) => {
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(X0, H * 2);
+      const base = hz + k * 34 - 20, amp = 160 - k * 30;
+      let y = base - amp * 0.5;
+      for (let x = X0; x <= X1; x += 24) {
+        y += (rnd() - 0.5) * amp * 0.35; y = Math.max(base - amp, Math.min(base + 10, y));
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(X1, H * 2); ctx.fill();
+    });
+    const gnd = ctx.createLinearGradient(0, hz + 110, 0, H * 1.6);
+    palette.ground.forEach(([o, c]) => gnd.addColorStop(o, c));
+    ctx.fillStyle = gnd; ctx.fillRect(X0, hz + 110, X1 - X0, H * 2);
+    ctx.restore();
+  }
+
+  const PAL = {
+    dusk: { sky: [[0, "#1d2b53"], [0.6, "#6d6a9c"], [0.9, "#f0a77e"], [1, "#ffd3a1"]], sun: "rgba(255,214,160,0.9)", ridges: ["#4b4d77", "#363a5e", "#262a45", "#1a1d31"], ground: [[0, "#1a1d31"], [1, "#0b0c14"]] },
+    day: { sky: [[0, "#2a6fc9"], [0.7, "#86b9ec"], [1, "#d8ecff"]], sun: "rgba(255,255,240,0.6)", ridges: ["#8fa9c4", "#6f8ca3", "#4f6b5a", "#3a5640"], ground: [[0, "#3a5640"], [1, "#1f3022"]] },
+    night: { sky: [[0, "#05070d"], [0.8, "#122039"], [1, "#24406b"]], sun: "rgba(120,170,255,0.25)", ridges: ["#1a2740", "#141e31", "#0e1524", "#090e18"], ground: [[0, "#090e18"], [1, "#030508"]] },
+  };
+
+  async function shot(name, theme, template, t, pal, W = 1920, H = 1080) {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    const p = sampleAt(tel, t);
+    landscape(ctx, W, H, p.roll, p.pitch, PAL[pal]);
+    const layout = { ...applyTemplate(defaultLayout(), template), style: theme };
+    drawHud(ctx, W, H, p, { t, track, tiles: null, layout });
+    return [name, c.toDataURL("image/png")];
+  }
+
+  window.shots = async () => Object.fromEntries(await Promise.all([
+    shot("hud-classic", "classic", "bottom", 41, "dusk"),
+    shot("hud-fighter", "fighter", "fighter", 63, "night"),
+    shot("hud-racing", "racing", "racing", 88, "day"),
+    shot("hud-glass", "glass", "corners", 25, "day"),
+  ]));
+  window.ready = true;
+</script>
+</body>

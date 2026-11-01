@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>sync test</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // 개발용: 가짜 고글 영상(0014 LRF 100초~ 재인코딩 + OSD 띠)으로 자동 동기화 검증. 기대값 offset ≈ 100
+  import { inspectGoggles, syncGoggles } from "/src/goggles.ts";
+  // 테스트 영상 폴더: ?dir=/절대/경로 (한 번 주면 기억). vite 는 DJI_TEST_DIR 환경 변수 폴더도 읽기 허용
+  const base = (() => { const q = new URLSearchParams(location.search).get("dir"); if (q) localStorage.setItem("djiTestDir", q); const d = q ?? localStorage.getItem("djiTestDir"); if (!d) throw new Error("?dir=/absolute/path/to/footage 로 테스트 영상 폴더를 지정하세요"); return "/@fs" + d.replace(/\/$/, "") + "/"; })();
+  const file = async (p, n) => new File([await (await fetch(base + p)).blob()], n);
+  const out = [];
+  const show = () => (document.getElementById("out").textContent = out.join("\n"));
+  try {
+    // 사례 1: 빠른 비행 (0014, 기대 100)
+    {
+      const lrf = await file("_sources/DJI_20261011171705_0014_D.LRF", "a.LRF");
+      const start = new Date(2026, 9, 11, 17, 17, 5).getTime();
+      const g = await inspectGoggles(await file("web/test/.local/goggles_test.mp4", "goggles_test.mp4"));
+      g.start = start + 105_000;
+      const t0 = performance.now();
+      const r = await syncGoggles([{ file: lrf, start, duration: 460.36 }], g);
+      out.push(`fast flight: offset ${r.offset.toFixed(3)} (expect 100) score ${r.score.toFixed(3)} in ${((performance.now() - t0) / 1000).toFixed(1)}s`); show();
+    }
+    // 사례 2: 호버 위주, 클립 3개 (기대 3)
+    {
+      const names = ["0017", "0018", "0019"].map((n, i) => ["DJI_20261030173851_0017_D", "DJI_20261030173918_0018_D", "DJI_20261030173932_0019_D"][i]);
+      const durs = [24.8248, 12.5792, 13.8138];
+      const starts = [new Date(2026, 9, 30, 17, 38, 51), new Date(2026, 9, 30, 17, 39, 18), new Date(2026, 9, 30, 17, 39, 32)].map((d) => d.getTime());
+      const clips = [];
+      for (let i = 0; i < 3; i++) clips.push({ file: await file(`_sources/${names[i]}.LRF`, names[i] + ".LRF"), start: starts[i], duration: durs[i] });
+      const g = await inspectGoggles(await file("web/test/.local/DJIG0007.mp4", "DJIG0007.mp4"));
+      const t0 = performance.now();
+      const r = await syncGoggles(clips, g);
+      out.push(`hover flight: offset ${r.offset.toFixed(3)} (expect 3) coarse ${r.coarse.toFixed(1)} score ${r.score.toFixed(3)} in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+    }
+    out.push("DONE");
+  } catch (e) { out.push("ERROR " + (e.stack || e)); }
+  show();
+</script>

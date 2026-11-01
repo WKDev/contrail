@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>hud test</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // 개발용: 실제 파일로 HUD 합성 검증. ?sink=URL 이면 결과 mp4 를 POST
+  import { readTelemetry, fromJSON } from "/src/telemetry.ts";
+  import { renderOverlay } from "/src/render.ts";
+  import { parse } from "/src/mp4.ts";
+  // 테스트 영상 폴더: ?dir=/절대/경로 (한 번 주면 기억). vite 는 DJI_TEST_DIR 환경 변수 폴더도 읽기 허용
+  const base = (() => { const q = new URLSearchParams(location.search).get("dir"); if (q) localStorage.setItem("djiTestDir", q); const d = q ?? localStorage.getItem("djiTestDir"); if (!d) throw new Error("?dir=/absolute/path/to/footage 로 테스트 영상 폴더를 지정하세요"); return "/@fs" + d.replace(/\/$/, "") + "/"; })();
+  const name = new URLSearchParams(location.search).get("f") ?? "DJI_20261030173918_0018_D.MP4";
+  const sink = new URLSearchParams(location.search).get("sink");
+  const telPath = new URLSearchParams(location.search).get("tel");
+  const out = [];
+  const show = () => (document.getElementById("out").textContent = out.join("\n"));
+  const reader = (f) => ({ size: f.size, read: async (o, l) => new Uint8Array(await f.slice(o, o + l).arrayBuffer()) });
+  try {
+    const f = new File([await (await fetch(base + name)).blob()], name);
+    const tel = telPath ? fromJSON(await (await fetch(base + telPath)).text()) : await readTelemetry(reader(f));
+    out.push(`telemetry ${tel.t.length} samples`); show();
+    let buf = new Uint8Array(Math.max(256 * 1024 * 1024, f.size * 1.5));
+    let len = 0;
+    const t0 = performance.now();
+    const gog = new URLSearchParams(location.search).get("goggles");
+    const gogOff = Number(new URLSearchParams(location.search).get("goff") ?? 0);
+    const gogFile = gog ? new File([await (await fetch(base + gog)).blob()], "g.mp4") : null;
+    const res = await renderOverlay(reader(f), {
+      write: async (c) => { buf.set(c, len); len += c.length; },
+      writeAt: async (p, c) => buf.set(c, p),
+    }, { tel, until: Number(new URLSearchParams(location.search).get("until") ?? 0) || undefined, goggles: gogFile ? { segments: [{ file: gogFile, offset: gogOff }], masks: [{ x: 0, y: 0.865, w: 1, h: 0.135 }] } : null, mapsKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY, onStage: (st) => { out.push(st); show(); }, onProgress: (d, t) => { out[1] = `render ${d}/${t}`; show(); } });
+    const mp4 = buf.slice(0, len);
+    out.push(`rendered ${res.frames} frames, ${(len / 1e6).toFixed(1)} MB in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+    const tr = await parse(reader(new Blob([mp4])));
+    out.push(`parsed: ${tr.count} samples, ${tr.duration.toFixed(3)}s`);
+    if (sink) await fetch(sink, { method: "POST", body: mp4 });
+    out.push("DONE");
+  } catch (e) {
+    out.push("ERROR " + (e.stack || e));
+  }
+  show();
+</script>

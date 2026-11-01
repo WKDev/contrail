@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>opfs setup</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // 개발용: 실제 DJI 파일 일부를 OPFS 에 복사 → /?opfs 로 앱이 그 폴더를 엶 (헤드리스 검증)
+  // 테스트 영상 폴더: ?dir=/절대/경로 (한 번 주면 기억). vite 는 DJI_TEST_DIR 환경 변수 폴더도 읽기 허용
+  const base = (() => { const q = new URLSearchParams(location.search).get("dir"); if (q) localStorage.setItem("djiTestDir", q); const d = q ?? localStorage.getItem("djiTestDir"); if (!d) throw new Error("?dir=/absolute/path/to/footage 로 테스트 영상 폴더를 지정하세요"); return "/@fs" + d.replace(/\/$/, "") + "/"; })();
+  const out = [];
+  const show = () => (document.getElementById("out").textContent = out.join("\n"));
+  try {
+    const root = await navigator.storage.getDirectory();
+    for await (const [name] of root.entries()) await root.removeEntry(name, { recursive: true });
+    const files = [
+      ["_sources/DJI_20261030173851_0017_D.MP4", ""], ["_sources/DJI_20261030173851_0017_D.LRF", ""],
+      ["_sources/DJI_20261030173918_0018_D.MP4", ""], ["_sources/DJI_20261030173918_0018_D.LRF", ""],
+      ["_sources/DJI_20261030173932_0019_D.MP4", ""], ["_sources/DJI_20261030173932_0019_D.LRF", ""],
+      ["2_ready/DJI_20261028130230_0001_D.MP4", ""], ["_sources/DJI_20261028130230_0001_D.LRF", ""],
+      ["web/test/.local/DJI_0070.MOV", "goggles"], ["web/test/.local/DJI_0071.MOV", "goggles"], ["web/test/.local/DJI_0072.MOV", "goggles"],
+    ];
+    for (const [p, dir] of files) {
+      const d = dir ? await root.getDirectoryHandle(dir, { create: true }) : root;
+      const name = p.split("/").pop();
+      const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+      await (await fetch(base + p)).body.pipeTo(w);
+      out.push("copied " + name); show();
+    }
+    out.push("DONE");
+  } catch (e) { out.push("ERROR " + e); }
+  show();
+</script>

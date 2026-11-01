@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" width="1280" height="420" font-family="Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif">
+  <defs>
+    <radialGradient id="glowA" cx="0.18" cy="0.1" r="0.7">
+      <stop offset="0" stop-color="#2b4a8f" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#0d1118" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.92" cy="1" r="0.6">
+      <stop offset="0" stop-color="#1f5a3f" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#0d1118" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="icon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6b97ff"/>
+      <stop offset="1" stop-color="#2f5bd8"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3577d4"/>
+      <stop offset="1" stop-color="#2a63b8"/>
+    </linearGradient>
+    <linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7a4e26"/>
+      <stop offset="1" stop-color="#5d3a1b"/>
+    </linearGradient>
+    <clipPath id="ati"><circle cx="0" cy="0" r="92"/></clipPath>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.03"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="420" rx="28" fill="#0d1118"/>
+  <rect width="1280" height="420" rx="28" fill="url(#glowA)"/>
+  <rect width="1280" height="420" rx="28" fill="url(#glowB)"/>
+
+  <!-- 왼쪽: 아이콘 · 제목 -->
+  <g transform="translate(72 74)">
+    <rect width="76" height="76" rx="20" fill="url(#icon)"/>
+    <g transform="translate(38 38) scale(0.13) translate(-256 -256)" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round">
+      <path d="M196 196 L316 316 M316 196 L196 316"/>
+      <rect x="216" y="216" width="80" height="80" rx="22" fill="#fff" stroke="none"/>
+      <circle cx="160" cy="160" r="52"/><circle cx="352" cy="160" r="52"/>
+      <circle cx="160" cy="352" r="52"/><circle cx="352" cy="352" r="52"/>
+    </g>
+  </g>
+  <text x="72" y="214" fill="#f4f6fb" font-size="58" font-weight="800" letter-spacing="-1.5">Drone Library</text>
+  <text x="74" y="256" fill="#aab4c6" font-size="24" font-weight="500">드론 라이브러리 — 비행 영상 병합 · HUD 오버레이 · 고글 OSD</text>
+  <text x="74" y="290" fill="#7f8aa0" font-size="18">설치 없이 브라우저에서. 영상은 내 PC 밖으로 나가지 않습니다.</text>
+
+  <!-- 칩 -->
+  <g font-size="15" font-weight="600">
+    <g transform="translate(72 324)">
+      <rect width="118" height="34" rx="17" fill="#2f5bd8" fill-opacity="0.22" stroke="#5a8bff" stroke-opacity="0.55"/>
+      <text x="59" y="22" fill="#c9d8ff" text-anchor="middle">Avata 2</text>
+    </g>
+    <g transform="translate(200 324)">
+      <rect width="130" height="34" rx="17" fill="#2f5bd8" fill-opacity="0.22" stroke="#5a8bff" stroke-opacity="0.55"/>
+      <text x="65" y="22" fill="#c9d8ff" text-anchor="middle">Goggles 3</text>
+    </g>
+    <g transform="translate(340 324)">
+      <rect width="150" height="34" rx="17" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.18"/>
+      <text x="75" y="22" fill="#c4cbd8" text-anchor="middle">Chrome · Edge</text>
+    </g>
+    <g transform="translate(500 324)">
+      <rect width="124" height="34" rx="17" fill="#2fbf71" fill-opacity="0.16" stroke="#3ddc84" stroke-opacity="0.5"/>
+      <text x="62" y="22" fill="#bff0d3" text-anchor="middle">No server</text>
+    </g>
+  </g>
+
+  <!-- 오른쪽: 유리 카드 위 HUD 모형 -->
+  <g transform="translate(748 54)">
+    <rect width="472" height="312" rx="26" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+
+    <!-- 자세계 -->
+    <g transform="translate(120 132)">
+      <g clip-path="url(#ati)">
+        <g transform="rotate(-14)">
+          <rect x="-140" y="-140" width="280" height="148" fill="url(#sky)"/>
+          <rect x="-140" y="8" width="280" height="140" fill="url(#gnd)"/>
+          <line x1="-140" y1="8" x2="140" y2="8" stroke="#fff" stroke-width="2.5"/>
+          <g stroke="#fff" stroke-width="2" opacity="0.9">
+            <line x1="-26" y1="-22" x2="26" y2="-22"/><line x1="-14" y1="-52" x2="14" y2="-52"/>
+            <line x1="-26" y1="38" x2="26" y2="38"/><line x1="-14" y1="68" x2="14" y2="68"/>
+          </g>
+        </g>
+      </g>
+      <circle r="92" fill="none" stroke="#fff" stroke-opacity="0.92" stroke-width="3"/>
+      <path d="M-50 2 H-18 L-9 12 L0 2 L9 12 L18 2 H50" fill="none" stroke="#ffd23f" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M0 -84 l-8 14 h16 z" fill="#ffd23f"/>
+    </g>
+
+    <!-- 방위계 -->
+    <g transform="translate(340 132)">
+      <circle r="92" fill="#0f1218" fill-opacity="0.72" stroke="#fff" stroke-opacity="0.92" stroke-width="3"/>
+      <g stroke="#fff" stroke-width="2" stroke-linecap="round" transform="rotate(-38)">
+        <line y1="-84" y2="-70"/><line y1="-84" y2="-70" transform="rotate(30)"/><line y1="-84" y2="-70" transform="rotate(60)"/>
+        <line y1="-84" y2="-70" transform="rotate(90)"/><line y1="-84" y2="-70" transform="rotate(120)"/><line y1="-84" y2="-70" transform="rotate(150)"/>
+        <line y1="-84" y2="-70" transform="rotate(180)"/><line y1="-84" y2="-70" transform="rotate(210)"/><line y1="-84" y2="-70" transform="rotate(240)"/>
+        <line y1="-84" y2="-70" transform="rotate(270)"/><line y1="-84" y2="-70" transform="rotate(300)"/><line y1="-84" y2="-70" transform="rotate(330)"/>
+        <text y="-50" fill="#ff6b5b" stroke="none" font-size="20" font-weight="800" text-anchor="middle">N</text>
+        <text y="-50" fill="#fff" stroke="none" font-size="18" font-weight="700" text-anchor="middle" transform="rotate(90)">E</text>
+        <text y="-50" fill="#fff" stroke="none" font-size="18" font-weight="700" text-anchor="middle" transform="rotate(180)">S</text>
+        <text y="-50" fill="#fff" stroke="none" font-size="18" font-weight="700" text-anchor="middle" transform="rotate(270)">W</text>
+      </g>
+      <path d="M0 -30 L20 26 L0 14 L-20 26 Z" fill="#ffd23f"/>
+      <path d="M0 -98 l-8 -12 h16 z" fill="#ffd23f"/>
+    </g>
+
+    <!-- 7-세그먼트 느낌 수치 줄 -->
+    <g transform="translate(36 262)" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-weight="700">
+      <rect width="400" height="34" rx="9" fill="#000" fill-opacity="0.55"/>
+      <text x="16" y="23" fill="#ffd23f" font-size="13">SPD</text>
+      <text x="54" y="24" fill="#fff" font-size="20">48</text>
+      <text x="82" y="24" fill="#aab4c6" font-size="12">km/h</text>
+      <text x="146" y="23" fill="#ffd23f" font-size="13">ALT</text>
+      <text x="182" y="24" fill="#fff" font-size="20">72.4</text>
+      <text x="234" y="24" fill="#aab4c6" font-size="12">m</text>
+      <text x="276" y="23" fill="#ffd23f" font-size="13">VS</text>
+      <text x="304" y="24" fill="#fff" font-size="20">+1.2</text>
+      <text x="356" y="24" fill="#aab4c6" font-size="12">m/s</text>
+    </g>
+  </g>
+</svg>

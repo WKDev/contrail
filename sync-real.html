@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>sync real</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // 개발용: 실제 고글(Goggles 3) 녹화로 매칭/동기화 검증
+  import { inspectGoggles, syncGoggles } from "/src/goggles.ts";
+  // 테스트 영상 폴더: ?dir=/절대/경로 (한 번 주면 기억). vite 는 DJI_TEST_DIR 환경 변수 폴더도 읽기 허용
+  const base = (() => { const q = new URLSearchParams(location.search).get("dir"); if (q) localStorage.setItem("djiTestDir", q); const d = q ?? localStorage.getItem("djiTestDir"); if (!d) throw new Error("?dir=/absolute/path/to/footage 로 테스트 영상 폴더를 지정하세요"); return "/@fs" + d.replace(/\/$/, "") + "/"; })();
+  const file = async (p, n) => new File([await (await fetch(base + p)).blob()], n);
+  const out = [];
+  const show = () => (document.getElementById("out").textContent = out.join("\n"));
+  try {
+    const cases = [
+      { g: "web/test/.local/DJI_0047.MOV", clips: [["DJI_20261011171705_0014_D", [2026, 9, 11, 17, 17, 5], 460.343], ["DJI_20261011172445_0015_D", [2026, 9, 11, 17, 24, 45], 32.282]] },
+      { g: "web/test/.local/DJI_0070.MOV", clips: [["DJI_20261030173851_0017_D", [2026, 9, 30, 17, 38, 51], 24.8248]] },
+    ];
+    for (const c of cases) {
+      const g = await inspectGoggles(await file(c.g, c.g.split("/").pop()));
+      out.push(`${g.name}: start ${new Date(g.start).toISOString()} (${g.timeSource}) dur ${g.duration.toFixed(2)} ${g.width}x${g.height}`); show();
+      const clips = [];
+      for (const [stem, d, dur] of c.clips) clips.push({ file: await file(`_sources/${stem}.LRF`, stem + ".LRF"), start: new Date(...d).getTime(), duration: dur });
+      for (const win of [90, 30]) {
+        const t0 = performance.now();
+        const r = await syncGoggles(clips, g, { window: win });
+        const top = [...r.curve].sort((a, b) => b.score - a.score).slice(0, 3).map((x) => `${x.lag.toFixed(1)}:${x.score.toFixed(2)}`).join(" ");
+        out.push(`  window ${win}s → offset ${r.offset.toFixed(3)} coarse ${r.coarse.toFixed(2)} score ${r.score.toFixed(3)} (${((performance.now() - t0) / 1000).toFixed(1)}s) top: ${top}`); show();
+      }
+    }
+    out.push("DONE");
+  } catch (e) { out.push("ERROR " + (e.stack || e)); }
+  show();
+</script>

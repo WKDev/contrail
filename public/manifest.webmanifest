@@ -1,0 +1,11 @@
+{
+  "name": "드론 라이브러리",
+  "short_name": "드론 라이브러리",
+  "description": "드론 영상 자동 병합 · HUD 오버레이 · 고글 OSD 합성",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f8",
+  "theme_color": "#2f5bd8",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

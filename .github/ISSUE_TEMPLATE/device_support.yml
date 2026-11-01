@@ -1,0 +1,25 @@
+name: 기체·고글 지원 요청 · Device support
+description: Avata 2 / Goggles 3 외의 기기 · Other aircraft or goggles
+labels: [device-support]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: 모델 · Model
+      placeholder: DJI Air 3S / Goggles N3 …
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: 펌웨어 · Firmware
+  - type: textarea
+    id: what
+    attributes:
+      label: 어떻게 동작하나요? · What happens now?
+      description: 병합 · HUD(비행 데이터) · 고글 동기화 중 무엇이 안 되는지 · Which part fails: merge, HUD (flight data), goggles sync
+  - type: textarea
+    id: sample
+    attributes:
+      label: 샘플 · Sample
+      description: 짧은 녹화 공유 링크가 있으면 큰 도움이 됩니다. 위치가 드러나도 괜찮은 영상만 · A short clip link helps a lot. Only footage whose location you're OK sharing

@@ -1,0 +1,18 @@
+node_modules
+dist
+.wrangler
+.DS_Store
+
+# 비밀 값 (.env.example 만 올림)
+.env
+.env.*
+!.env.example
+
+# 실제 비행 영상·기록은 올리지 않음 (위치·시리얼 포함)
+test/.local
+*.MP4
+*.mp4
+*.LRF
+*.SRT
+DJIFlightRecord_*.txt
+dji_state.json
