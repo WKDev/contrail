@@ -5,7 +5,7 @@ import {
   Calendar, Check, CloudUpload, Drone, EyeOff, FolderOpen, Glasses, Layers, LoaderCircle, Merge, RefreshCw, Settings as SettingsIcon, CircleCheck, TriangleAlert, X,
 } from "lucide-preact";
 import { useApp, type View } from "../app.tsx";
-import { fmtDayShort, t } from "../i18n.ts";
+import { fmtDayShort, getLang, t } from "../i18n.ts";
 import { FlightsView } from "./Flights.tsx";
 import { Project } from "./Project.tsx";
 import { ExcludedView, GogglesView, UploadView } from "./Views.tsx";
@@ -107,7 +107,10 @@ function Sidebar() {
     <aside class="sidebar glass">
       <div class="brand">
         <span class="brand-mark"><Drone size={18} strokeWidth={1.75} /></span>
-        <span>{t("appName")}</span>
+        <span class="brand-text">
+          <span>{t("appName")}</span>
+          <a class="family-link" href={ouworkUrl()} target="_blank" rel="noopener">{t("family.short")}</a>
+        </span>
       </div>
       <nav class="nav">
         {item("all", <Layers size={17} strokeWidth={1.75} />, t("nav.all"), counts.all)}
@@ -266,8 +269,21 @@ function Welcome() {
           {!g && <span class="muted small">{t("setup.laterHint")}</span>}
         </div>
         <p class="fine">{t("empty.privacy")}</p>
+        <FamilyLine />
       </section>
     </div>
+  );
+}
+
+// OUWORK 제품군 표시 (ouwork.io 는 ?lang= 으로 언어를 이어받음)
+const ouworkUrl = () => `https://ouwork.io/?lang=${getLang()}`;
+function FamilyLine() {
+  return (
+    <p class="family-line">
+      <img src="/ouwork-mark.png" width="18" height="18" alt="" />
+      <span>{t("family.line")}</span>
+      <a href={ouworkUrl()} target="_blank" rel="noopener">{t("family.more")} ↗</a>
+    </p>
   );
 }
 
@@ -278,6 +294,7 @@ function Unsupported() {
         <span class="brand-mark lg"><Drone size={28} strokeWidth={1.6} /></span>
         <h1>{t("appName")}</h1>
         <p class="lead">{t("empty.browser")}</p>
+        <FamilyLine />
       </section>
     </div>
   );
