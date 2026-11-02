@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/images/hero.svg" alt="Contrail — 비행 영상 병합 · HUD 오버레이 · 고글 OSD" width="100%">
+  <img src="docs/images/hero.en.svg" alt="Contrail — flight video merge · HUD overlay · goggles OSD" width="100%">
 </p>
 
 <p align="center">
-  <b>한국어</b> · <a href="README.en.md">English</a>
+  <b>English</b> · <a href="README.ko.md">한국어</a> · <a href="https://contrail.ouwork.io"><b>Open the app →</b></a>
 </p>
 
 <p align="center">
@@ -14,160 +14,171 @@
   <img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-f59e0b">
 </p>
 
-**Contrail**(컨트레일, 비행운)은 비행이 남긴 흔적을 한 편의 영상으로 만듭니다. SD 카드에 흩어진 드론 영상을 **비행 단위로 묶어 이어붙이고**, 영상 속 비행 데이터로 **HUD 계기판을 입히고**, **고글 녹화의 OSD**까지 합성해 주는 웹앱입니다.
-설치도 서버도 없습니다. 브라우저가 내 PC의 폴더를 직접 읽고 쓰며, 영상은 PC 밖으로 나가지 않습니다.
+**Contrail** turns the trail your flight leaves behind into one finished video. It takes the clips scattered across your drone's SD card, **groups and joins them per flight**, **draws a HUD** from the flight data embedded in the video, and **composites the OSD from your goggles recording** on top.
+There's nothing to install and no server. The browser reads and writes your local folder directly, and your footage never leaves your computer.
 
-> 기본 대상은 **DJI Avata 2 + DJI Goggles 3** 입니다. 두 기기의 실제 녹화로 만들고 검증했습니다.
-> 다른 기체·고글도 영상 구조가 비슷하면 동작할 수 있습니다. 샘플을 나눠 주시면 지원을 넓힐 수 있어요. [기여하기](#기여하기)
+> The primary target is **DJI Avata 2 + DJI Goggles 3**. The app was built and verified on real recordings from both devices.
+> Other aircraft and goggles may work if their files are structured similarly. Share a sample and we can widen support. See [Contributing](#contributing).
 
 <br>
 
-## 무엇을 해 주나요
+## Why I built this
+
+I fly a DJI Avata 2 with Goggles 3, and every flight leaves me with two recordings, neither of them complete:
+
+- **The drone's own video** is sharp and stabilized, with no vibration, but it has **no OSD**.
+- **The goggles recording** has the OSD, but the picture is lower quality.
+- **Both get split** once a recording runs past a certain length, so every flight has to be stitched back together by hand.
+- **Nothing tells you where a video was shot.** I wanted the flight path drawn on a Google Maps minimap, so each video carries its own location.
+
+Contrail does all of that in one pass: it joins the splits losslessly, lays the goggles OSD over the clean drone footage, and draws a HUD with a map trail from the flight data already stored inside the video.
+
+<br>
+
+## What it does
 
 <p align="center">
-  <img src="docs/images/pipeline.svg" alt="SD 카드 → 비행으로 묶기 · 병합 → HUD · 고글 OSD 합성 → 완성" width="100%">
+  <img src="docs/images/pipeline.en.svg" alt="SD card → group & merge per flight → HUD + goggles OSD → done" width="100%">
 </p>
 
-| | |
-|---|---|
-| **비행 단위 자동 병합** | 7분 40초마다 잘리는 분할 영상과 잠깐 멈췄다 이어 찍은 클립을 알아서 한 비행으로 묶습니다. **재압축 없이** 이어붙이고 프레임 수로 검증하니 화질 손실이 없습니다. 이음매 앞뒤 프레임을 보고 직접 나누거나 뺄 수도 있습니다. |
-| **HUD 오버레이** | 영상 파일 안에 기록된 자세·방위·속도·고도·GPS로 계기판을 그립니다. 위젯 12종, 테마 15종, 배치 템플릿 8종. 플레이어 위에서 끌어서 배치하면 가장자리·간격·원끼리 맞닿기까지 스냅됩니다. |
-| **고글 OSD 합성** | Goggles 3 녹화를 촬영 시각과 화면 움직임으로 **자동으로 맞춘 뒤**, 고글 화면의 OSD만 오려 내 드론 원본 화질 영상에 얹습니다. 메뉴·경고창이 뜬 구간은 알아서 뺍니다. |
-| **비행기록 요약** | `FlightRecords` 의 비행기록 파일을 읽어 비행 시간·거리·최고 고도/속도를 영상과 짝지어 보여 줍니다 (본문은 암호화돼 있어 요약만 읽습니다). |
-| **모두 처리** | 쌓인 비행을 버튼 하나로 차례로 병합하고 HUD 영상까지 만듭니다. 중간에 멈춰도, 하나가 실패해도 안전합니다. |
-| **YouTube 업로드 (선택)** | 설정에서 켜면 완성 영상을 바로 올립니다. 끄면 화면에 나타나지도 않습니다. |
+- **Per-flight lossless merge.** It joins the 7:40 auto-split files and clips you restarted right away into one flight. No re-encoding, and the result is verified by frame count. You can inspect any seam and split or drop clips yourself.
+- **HUD overlay.** Instruments are drawn from the attitude, heading, speed, altitude and GPS stored inside the video file. There are 12 widgets, 15 themes and 8 layout templates. You lay them out by dragging on the player, and they snap to edges, spacing and circle-to-circle tangency.
+- **Goggles OSD.** Goggles 3 recordings are **synced automatically** by timestamp and motion correlation. Only the OSD is keyed out and laid over the full-quality drone footage, and stretches showing menus or warning dialogs are skipped.
+- **Flight record summary.** It reads `DJIFlightRecord_*.txt` headers and pairs flight time, distance and max altitude/speed with each video. Only the header is read, since the body is encrypted.
+- **Process all.** One button merges every pending flight and renders the HUD videos, one after another. You can cancel at any point, and a failed flight doesn't stop the rest.
+- **YouTube upload (optional).** Hidden unless you turn it on in Settings.
 
 <br>
 
-## HUD 미리보기
+## HUD gallery
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/hud-classic.jpg" alt="클래식 테마 — 하단 계기"><br><sub><b>클래식</b> · 하단 계기</sub></td>
-    <td width="50%"><img src="docs/images/hud-fighter.jpg" alt="전투기 HUD 테마"><br><sub><b>전투기 HUD</b> · 피치 사다리</sub></td>
+    <td width="50%"><img src="docs/images/hud-classic.jpg" alt="Classic theme"><br><sub><b>Classic</b> · bottom gauges</sub></td>
+    <td width="50%"><img src="docs/images/hud-fighter.jpg" alt="Fighter HUD theme"><br><sub><b>Fighter HUD</b> · pitch ladder</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/hud-racing.jpg" alt="레이싱 테마"><br><sub><b>레이싱</b> · 큰 속도계</sub></td>
-    <td width="50%"><img src="docs/images/hud-glass.jpg" alt="글라스 테마 — 모서리 배치"><br><sub><b>글라스</b> · 모서리 배치</sub></td>
+    <td width="50%"><img src="docs/images/hud-racing.jpg" alt="Racing theme"><br><sub><b>Racing</b> · big speedo</sub></td>
+    <td width="50%"><img src="docs/images/hud-glass.jpg" alt="Glass theme"><br><sub><b>Glass</b> · corners</sub></td>
   </tr>
 </table>
 
-<sub>위 그림은 앱의 실제 HUD 그리기 코드(`src/hud.ts`)에 가상의 비행 데이터를 넣어 만든 것입니다. 배경 풍경은 그림이며, 실제 영상에서는 위성 지도 미니맵도 쓸 수 있습니다 (Google Map Tiles API 키 필요).</sub>
+<sub>These images were rendered by the app's real HUD code (`src/hud.ts`) using synthetic flight data over a drawn backdrop. With a Google Map Tiles API key, the minimap shows satellite imagery.</sub>
 
 <br>
 
-## 시작하기
+## Getting started
 
-<img src="docs/images/welcome.jpg" alt="첫 화면 — 드론 영상 폴더와 고글 녹화 폴더 고르기" width="420" align="right">
+<img src="docs/images/welcome.jpg" alt="Welcome screen — pick the drone footage folder and the goggles folder" width="420" align="right">
 
-**필요한 것**
-- 데스크톱 **Chrome** 또는 **Edge** (폴더를 직접 읽고 쓰는 File System Access API와 WebCodecs가 필요합니다. Firefox·Safari는 아직 지원하지 않습니다)
-- 드론 SD 카드의 `DJI_*.MP4` 영상을 복사해 둔 폴더
-- (선택) 고글 SD 카드나 고글 녹화를 모아 둔 폴더
+**You need:**
+- Desktop **Chrome** or **Edge**. The app relies on the File System Access API and WebCodecs, so Firefox and Safari aren't supported yet.
+- A folder containing the `DJI_*.MP4` files copied from the drone's SD card.
+- Optionally, the goggles' SD card or a folder of goggles recordings.
 
-**사용 순서**
-1. 앱을 열고 **드론 영상 폴더**를 고릅니다. 고글 녹화 폴더도 있으면 함께 고릅니다.
-2. 앱이 클립을 비행별로 묶어 보여 줍니다. 비행을 열면 큰 플레이어로 병합 결과를 미리 볼 수 있습니다.
-3. **HUD** 탭에서 계기판을, **고글** 탭에서 OSD 영역을 손봅니다. 바꾼 내용은 바로 저장됩니다 (Ctrl+Z 되돌리기).
-4. **병합하고 오버레이 만들기** 또는 라이브러리의 **모두 처리**를 누릅니다.
+**Steps:**
+1. Open the app and pick your **drone footage folder**, plus the goggles folder if you have one.
+2. Clips are grouped into flights. Open a flight to preview the merged result in the player.
+3. Tune the instruments in the **HUD** tab and the OSD region in the **Goggles** tab. Changes save instantly, and Ctrl+Z undoes them.
+4. Click **Merge and build overlay**, or **Process all** in the library.
 
-완성 영상은 폴더 안의 `2_ready/` 에 쌓입니다. 원본은 지우지 않고 `_sources/` 로 옮겨 둡니다.
+Finished videos land in `2_ready/` inside your folder. Originals are never deleted; they're moved to `_sources/`.
 
 <br clear="right">
 
 <details>
-<summary><b>폴더 구조</b> (앱이 자동으로 만듭니다)</summary>
+<summary><b>Folder layout</b> (created by the app)</summary>
 
-| 위치 | 의미 |
+| Path | Meaning |
 |---|---|
-| `<폴더>/` | 병합 대기. SD 카드의 `DJI_*.MP4/.LRF/.SRT` 를 여기에 복사 |
-| `2_ready/` | 완성 영상 (`*_merged.MP4`, `*_hud.MP4`, `*_goggles.MP4`) + 비행 데이터 `*.telemetry.json` |
-| `3_uploaded/` | YouTube 업로드를 마친 영상 (업로드 기능을 켰을 때) |
-| `_sources/` | 병합에 쓰인 원본 (지우지 않음) |
-| `_excluded/` | 제외한 짧은 클립 |
-| `goggles/` | 고글 녹화 ("고글 영상 추가"로 복사하거나 직접 넣기) |
-| `FlightRecords/` | (선택) 비행기록 `DJIFlightRecord_*.txt` |
-| `dji_state.json` | 수동 선택, 비행별 설정, 고글 연결 기록 |
+| `<folder>/` | Waiting to be merged. Copy `DJI_*.MP4/.LRF/.SRT` from the SD card here |
+| `2_ready/` | Finished videos (`*_merged.MP4`, `*_hud.MP4`, `*_goggles.MP4`) + flight data `*.telemetry.json` |
+| `3_uploaded/` | Videos already uploaded to YouTube (when upload is enabled) |
+| `_sources/` | Originals used in a merge (never deleted) |
+| `_excluded/` | Short clips that were skipped |
+| `goggles/` | Goggles recordings (copied with "Add goggles videos", or dropped in by hand) |
+| `FlightRecords/` | (optional) Flight records `DJIFlightRecord_*.txt` |
+| `dji_state.json` | Manual choices, per-flight settings, goggles pairings |
 
 </details>
 
 <br>
 
-## 개인정보
+## Privacy
 
-- 영상, 비행 데이터, 위치는 **브라우저 안에서만** 처리합니다. 이 앱에는 서버가 없습니다.
-- 바깥으로 나가는 요청은 두 가지뿐이며, 둘 다 직접 켰을 때만 일어납니다.
-  - **위성 지도 미니맵**: Google Map Tiles API 키를 넣으면 비행 지역의 지도 타일을 Google에서 받아 옵니다.
-  - **YouTube 업로드**: 업로드를 켜고 Google 계정을 연결하면 고른 영상을 YouTube로 보냅니다.
+- Video, flight data and location are processed **only inside your browser**. The app has no server.
+- Only two things can make network requests, and both are opt-in:
+  - **The satellite minimap** fetches map tiles for the flight area from Google once you add a Map Tiles API key.
+  - **YouTube upload** sends the videos you choose once you enable it and connect a Google account.
 
 <br>
 
-## 개발
+## Development
 
 ```sh
 pnpm install
 pnpm dev        # http://localhost:5173
-pnpm test       # 단위 테스트 (실제 영상이 필요한 테스트는 DJI_TEST_DIR 이 있을 때만 실행)
-pnpm build      # 타입 검사 + 정적 빌드 → dist/
+pnpm test       # unit tests (tests needing real footage run only when DJI_TEST_DIR is set)
+pnpm build      # type-check + static build → dist/
 ```
 
-`dist/` 는 아무 정적 호스팅에나 올리면 됩니다 (HTTPS 필요). `.env.example` 을 참고해 `.env` 를 만들면 지도·업로드 기본값을 넣을 수 있습니다.
-`VITE_` 값은 번들에 그대로 들어가므로 **API 키는 반드시 HTTP 리퍼러 제한**을 거세요. 키 없이도 앱 설정 화면에서 입력할 수 있습니다.
+`dist/` can be deployed to any static host that serves HTTPS. Copy `.env.example` to `.env` for default map and upload settings.
+`VITE_` values are bundled verbatim, so **restrict API keys by HTTP referrer**. Users can also enter keys in the app's Settings.
 
 <details>
-<summary><b>코드 둘러보기</b></summary>
+<summary><b>Code tour</b></summary>
 
-| 파일 | 하는 일 |
+| File | What it does |
 |---|---|
-| `src/mp4.ts` | 최소 MP4 파서·병합기. 재인코딩 없이 샘플만 이어붙임 |
-| `src/plan.ts` | 클립을 비행으로 묶고 병합·제외를 정하는 규칙 (순수 함수) |
-| `src/telemetry.ts` | 영상 안 `djmd` 메타데이터(protobuf) → 프레임별 비행 데이터 |
-| `src/hud.ts` · `src/map.ts` | HUD 위젯·테마·미니맵 그리기 |
-| `src/render.ts` | WebCodecs 디코드 → 캔버스 합성 → H.264 인코드 → MP4 |
-| `src/goggles.ts` · `src/sync.ts` | 고글 녹화 매칭·시간 동기화 |
-| `src/osdkey.ts` · `src/osdstat.ts` | 고글 화면에서 OSD만 남기기 |
-| `src/flightlog.ts` | 비행기록 요약 읽기 (v6~v14) |
-| `src/snap.ts` | 배치 편집 스냅 |
-| `src/library.ts` · `src/store.ts` | 폴더 → 비행 모델, 상태 파일 |
-| `src/ui/*` | 화면 (Preact) |
-
-자동 판단 규칙, 고글 동기화, OSD 키잉, 렌더 안정 장치 같은 세부 동작은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 에 있습니다.
+| `src/mp4.ts` | Minimal MP4 parser and muxer. Joins samples without re-encoding |
+| `src/plan.ts` | Rules that group clips into flights and decide merges/exclusions (pure functions) |
+| `src/telemetry.ts` | In-video `djmd` metadata (protobuf) → per-frame flight data |
+| `src/hud.ts` · `src/map.ts` | HUD widgets, themes and minimap drawing |
+| `src/render.ts` | WebCodecs decode → canvas compositing → H.264 encode → MP4 |
+| `src/goggles.ts` · `src/sync.ts` | Goggles recording matching and time sync |
+| `src/osdkey.ts` · `src/osdstat.ts` | Keeping only the OSD from the goggles picture |
+| `src/flightlog.ts` | Flight record summary reader (v6–v14) |
+| `src/snap.ts` | Snapping for the layout editor |
+| `src/library.ts` · `src/store.ts` | Folder → flight model, state file |
+| `src/ui/*` | Screens (Preact) |
 
 </details>
 
-<br>
-
-## 기여하기
-
-협업과 기여는 **언제든 환영합니다**. 코드가 아니어도 좋습니다.
-
-- **다른 기체·고글 샘플**: Avata 2 / Goggles 3 밖의 기종(Mini, Air, Mavic, Neo, Goggles 2, Goggles N3 등)은 짧은 녹화 하나만 있어도 지원을 넓힐 수 있습니다.
-- **버그 제보**: 브라우저 버전, 기체·고글 모델, 무엇을 눌렀는지 적어 주세요. 앱의 오류 화면에 있는 "오류 내용 복사"를 붙여 주시면 가장 빠릅니다.
-- **번역**: 지금은 한국어·영어를 지원합니다 (`src/i18n.ts`).
-- **HUD 테마·위젯 아이디어**, 문서 개선, 사용 후기도 모두 반갑습니다.
-
-자세한 방법은 [CONTRIBUTING.md](CONTRIBUTING.md) 를 봐 주세요.
+The detailed behavior (grouping rules, goggles sync, OSD keying, render safeguards) is documented in Korean in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 <br>
 
-## 앞으로
+## Contributing
 
-- [ ] 처음 쓰는 사람을 위한 안내와 지원하지 않는 브라우저 안내
-- [ ] 정적 호스팅 공개 배포
-- [ ] 다른 DJI 기체·고글 지원 확대
-- [ ] 결과 영상 짧은 미리보기 렌더
-- [ ] 비행기록 본문(스틱·배터리) 읽기. DJI 키 발급이 필요합니다
+Collaboration and contributions are **always welcome**, and they don't have to be code:
+
+- **Samples from other aircraft or goggles** (Mini, Air, Mavic, Neo, Goggles 2, Goggles N3, …). Even one short recording helps.
+- **Bug reports.** Include your browser version, aircraft and goggles models, and what you clicked. The "Copy error details" button on the app's error screen helps most.
+- **Translations.** Korean and English ship today (`src/i18n.ts`).
+- **HUD theme and widget ideas**, docs, and feedback.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <br>
 
-## 감사의 말
+## Roadmap
 
-- [telemetry-parser](https://github.com/AdrianEddy/telemetry-parser): DJI `djmd` 메타데이터 구조 참고
-- [dji-log-parser](https://github.com/lvauvillier/dji-log-parser): 비행기록 형식 참고
-- [Pretendard](https://github.com/orioncactus/pretendard), [Lucide](https://lucide.dev), [Preact](https://preactjs.com)
+- [ ] First-run guidance and an unsupported-browser notice
+- [ ] Public static deployment
+- [ ] Support for more DJI aircraft and goggles
+- [ ] Quick low-res preview render of the result
+- [ ] Reading the flight record body (sticks, battery). Requires a DJI app key
 
-## 라이선스
+<br>
+
+## Acknowledgements
+
+- [telemetry-parser](https://github.com/AdrianEddy/telemetry-parser) was the reference for DJI's `djmd` metadata layout.
+- [dji-log-parser](https://github.com/lvauvillier/dji-log-parser) was the reference for the flight record format.
+- [Pretendard](https://github.com/orioncactus/pretendard), [Lucide](https://lucide.dev) and [Preact](https://preactjs.com)
+
+## License
 
 [MIT](LICENSE)
 
-DJI, Avata, DJI Goggles는 SZ DJI Technology Co., Ltd.의 상표입니다. 이 프로젝트는 DJI와 관련이 없는 비공식 도구입니다.
+DJI, Avata and DJI Goggles are trademarks of SZ DJI Technology Co., Ltd. This is an unofficial project and is not affiliated with DJI.
