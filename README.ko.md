@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <b>한국어</b> · <a href="https://contrail.ouwork.io"><b>앱 열기 →</b></a>
+  <a href="README.md">English</a> · <b>한국어</b> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.es.md">Español</a> · <a href="https://contrail.ouwork.io"><b>앱 열기 →</b></a>
 </p>
 
 <p align="center">
@@ -22,7 +22,11 @@
 
 <br>
 
-## 왜 만들었나
+## Contrail 제작 배경
+
+<p align="center">
+  <img src="docs/images/background.ko.svg" alt="드론 영상은 선명하지만 OSD가 없고, 고글 영상은 OSD가 있지만 화질이 떨어지며, 둘 다 분할되고 촬영 장소도 알 수 없다. Contrail 은 이를 지도 궤적이 들어간 영상 한 편으로 합친다." width="100%">
+</p>
 
 DJI Avata 2 와 Goggles 3 로 비행하면 한 번 날 때마다 영상이 두 개 남는데, 어느 쪽도 완전하지 않습니다.
 
@@ -166,7 +170,7 @@ pnpm build      # 타입 검사 + 정적 빌드 → dist/
 ## 앞으로
 
 - [ ] 처음 쓰는 사람을 위한 안내와 지원하지 않는 브라우저 안내
-- [ ] 정적 호스팅 공개 배포
+- [x] 정적 호스팅 공개 배포 ([contrail.ouwork.io](https://contrail.ouwork.io))
 - [ ] 다른 DJI 기체·고글 지원 확대
 - [ ] 결과 영상 짧은 미리보기 렌더
 - [ ] 비행기록 본문(스틱·배터리) 읽기. DJI 키 발급이 필요합니다

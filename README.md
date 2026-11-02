@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>English</b> · <a href="README.ko.md">한국어</a> · <a href="https://contrail.ouwork.io"><b>Open the app →</b></a>
+  <b>English</b> · <a href="README.ko.md">한국어</a> · <a href="README.zh.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.es.md">Español</a> · <a href="https://contrail.ouwork.io"><b>Open the app →</b></a>
 </p>
 
 <p align="center">
@@ -22,7 +22,11 @@ There's nothing to install and no server. The browser reads and writes your loca
 
 <br>
 
-## Why I built this
+## Background
+
+<p align="center">
+  <img src="docs/images/background.en.svg" alt="Drone video is sharp but has no OSD; goggles video has the OSD but lower quality; both are split; neither says where it was shot. Contrail combines them into one video with a map trail." width="100%">
+</p>
 
 I fly a DJI Avata 2 with Goggles 3, and every flight leaves me with two recordings, neither of them complete:
 
@@ -164,7 +168,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Roadmap
 
 - [ ] First-run guidance and an unsupported-browser notice
-- [ ] Public static deployment
+- [x] Public static deployment ([contrail.ouwork.io](https://contrail.ouwork.io))
 - [ ] Support for more DJI aircraft and goggles
 - [ ] Quick low-res preview render of the result
 - [ ] Reading the flight record body (sticks, battery). Requires a DJI app key
