@@ -6,6 +6,7 @@ import { fileReader } from "./frames.ts";
 import type { Box, Layout, OsdMask } from "./store.ts";
 import { keyBlack, keyWhite, type StaticMask } from "./osdkey.ts";
 import { sampleAt, type Telemetry } from "./telemetry.ts";
+import { t as msg } from "./i18n.ts";
 
 export interface SeekWriter {
   write(chunk: Uint8Array): Promise<void>;
@@ -51,7 +52,7 @@ export function videoCodecOf(tr: Track) {
     const hex = (n: number) => n.toString(16).padStart(2, "0");
     return { codec: `avc1.${hex(avcC[1])}${hex(avcC[2])}${hex(avcC[3])}`, description: avcC };
   }
-  throw new Error(`지원하지 않는 코덱: ${entry}`);
+  throw new Error(msg("err.codec", { c: entry }));
 }
 
 // avc1 샘플 엔트리 (stsd) 생성
@@ -103,7 +104,7 @@ async function waitQueue(c: Codec, max: number, what: string, timeoutMs = 30_000
       const id = setTimeout(done, 50);
       c.addEventListener("dequeue", done);
     });
-    if (performance.now() - t0 > timeoutMs) throw new Error(`${what} 응답 없음 (${Math.round(timeoutMs / 1000)}초)`);
+    if (performance.now() - t0 > timeoutMs) throw new Error(msg("err.noResponse", { what, s: Math.round(timeoutMs / 1000) }));
   }
 }
 
@@ -134,7 +135,7 @@ async function pickEncoder(W: number, H: number, fps: number, bitrate: number): 
         const cfg: VideoEncoderConfig = { codec, width: W, height: H, bitrate, framerate: fps, avc: { format: "avc" }, latencyMode, hardwareAcceleration: hw };
         if ((await VideoEncoder.isConfigSupported(cfg).catch(() => ({ supported: false }))).supported) return cfg;
       }
-  throw new Error(`이 브라우저에서 ${W}×${H} ${Math.round(fps)}fps H.264 인코딩 불가`);
+  throw new Error(msg("err.encode", { w: W, h: H, fps: Math.round(fps) }));
 }
 const codecLevels = (first: string) => [first, ...["avc1.640034", "avc1.64003c", "avc1.64003e"].filter((c) => c > first)];
 async function pickDecoder(codec: string, description: Uint8Array, W: number, H: number): Promise<VideoDecoderConfig> {
@@ -142,7 +143,7 @@ async function pickDecoder(codec: string, description: Uint8Array, W: number, H:
     const cfg: VideoDecoderConfig = { codec, description, codedWidth: W, codedHeight: H, hardwareAcceleration: hw };
     if ((await VideoDecoder.isConfigSupported(cfg).catch(() => ({ supported: false }))).supported) return cfg;
   }
-  throw new Error(`이 브라우저에서 ${codec} 디코딩 불가 (HEVC 는 하드웨어 디코딩이 되는 Chrome/Edge 필요)`);
+  throw new Error(msg("err.decode", { c: codec }));
 }
 
 export interface OverlayOptions {
@@ -199,7 +200,7 @@ class GogglesStream {
     if (this.bad.has(k)) return;
     this.bad.add(k);
     const name = (this.segs[k].file as File).name ?? `#${k + 1}`;
-    this.warn(`고글 영상 ${name} 을 읽지 못해 그 구간은 OSD 없이 진행: ${(e as Error)?.message ?? e}`);
+    this.warn(msg("warn.gogglesRead", { name, msg: String((e as Error)?.message ?? e) }));
     if (this.cur?.seg === k) this.close();
   }
 
@@ -248,7 +249,7 @@ class GogglesStream {
     const t0 = performance.now();
     for (;;) {
       if (c.fault.err) throw c.fault.err;
-      if (performance.now() - t0 > 20_000) throw new Error("디코더 응답 없음");
+      if (performance.now() - t0 > 20_000) throw new Error(msg("err.decoderStuck"));
       while (c.frames.length >= 2 && c.frames[1].timestamp <= us) c.frames.shift()!.close();
       const lastF = c.frames[c.frames.length - 1];
       if (lastF && lastF.timestamp >= us) return c.frames[0];
@@ -262,7 +263,7 @@ class GogglesStream {
       }
       // 출력이 밀려 있으면 먼저 받아 둔다 (하드웨어 디코더는 프레임 풀이 작음)
       if (c.dec.decodeQueueSize > 4) {
-        await waitQueue(c.dec, 4, "고글 디코더", 20_000);
+        await waitQueue(c.dec, 4, msg("err.gogDecoder"), 20_000);
         continue;
       }
       const i = c.next++;
@@ -305,7 +306,7 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
       await tiles.prefetch(track, 118 * (tr.height / 1080), opts.onProgress);
     } catch (e) {
       tiles = null; // 지도 실패해도 궤적은 그림
-      warn(`지도 없이 진행: ${(e as Error)?.message ?? e}`);
+      warn(msg("warn.noMap", { msg: String((e as Error)?.message ?? e) }));
     }
   }
   if (opts.signal?.aborted) throw abortError();
@@ -376,7 +377,7 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
         }
         const p = tel ? sampleAt(tel, t) : null;
         if (p && (opts.instruments !== false || opts.map !== false)) drawHud(ctx, W, H, p, { t, track, tiles, instruments: opts.instruments !== false, map: opts.map !== false, layout: opts.layout });
-        await waitQueue(enc, 6, "인코더");
+        await waitQueue(enc, 6, msg("err.encoder"));
         while (pendingBytes > 96 * 1024 * 1024 && !error) await new Promise((r) => setTimeout(r, 5)); // 디스크가 느리면 기다림
         const vf = new VideoFrame(canvas, { timestamp: frame.timestamp, duration: frame.duration ?? undefined });
         try {
@@ -419,7 +420,7 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
       if (opts.signal?.aborted) throw abortError();
       if (decErr) {
         if (++resets > 5) throw decErr;
-        warn(`깨진 프레임을 건너뜀 (${fmtSec(dts / tr.timescale)} 부근): ${(decErr as Error)?.message ?? decErr}`);
+        warn(msg("warn.badFrame", { at: fmtSec(dts / tr.timescale), msg: String((decErr as Error)?.message ?? decErr) }));
         decErr = null;
         if (decoder.state !== "closed") decoder.close();
         decoder = newDecoder();
@@ -427,8 +428,8 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
         if (i >= count) break;
       }
       await drain();
-      if (decoder.decodeQueueSize > 6) await waitQueue(decoder, 6, "디코더");
-      if (performance.now() - lastComposed > 60_000) throw new Error("렌더가 1분 넘게 멈춤 (디코더/인코더 응답 없음)");
+      if (decoder.decodeQueueSize > 6) await waitQueue(decoder, 6, msg("err.decoder"));
+      if (performance.now() - lastComposed > 60_000) throw new Error(msg("err.renderStalled"));
       const off = tr.offsets[i];
       const size = tr.sizes[i];
       if (off < winStart || off + size > winStart + win.length) {
@@ -456,9 +457,9 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
     await encoder.flush();
     await writing;
     if (error) throw error;
-    if (!avcC) throw new Error("인코더 설정(avcC)을 받지 못함");
-    if (!sizes.length) throw new Error("출력 프레임이 없음");
-    for (let i = 1; i < pts.length; i++) if (pts[i] <= pts[i - 1]) throw new Error("인코더가 B-프레임을 출력함 (미지원)");
+    if (!avcC) throw new Error(msg("err.noAvcC"));
+    if (!sizes.length) throw new Error(msg("err.noFrames"));
+    for (let i = 1; i < pts.length; i++) if (pts[i] <= pts[i - 1]) throw new Error(msg("err.bFrames"));
 
     // 출력 트랙: 원본 트랙 메타데이터 재사용 + 새 샘플 테이블
     const deltas = new Uint32Array(sizes.length);

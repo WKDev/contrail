@@ -276,7 +276,8 @@ function Welcome() {
 }
 
 // OUWORK 제품군 표시 (ouwork.io 는 ?lang= 으로 언어를 이어받음)
-const ouworkUrl = () => `https://ouwork.io/?lang=${getLang()}`;
+// ouwork.io 는 한국어·영어만: 나머지 언어는 영어로
+const ouworkUrl = () => `https://ouwork.io/?lang=${getLang() === "ko" ? "ko" : "en"}`;
 function FamilyLine() {
   return (
     <p class="family-line">

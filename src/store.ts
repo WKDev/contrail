@@ -6,6 +6,7 @@
 //   <루트>/_sources/   병합에 사용된 원본 (확인 후 삭제해도 됨)
 //   <루트>/_excluded/  자동/수동 제외된 클립
 import type { Override } from "./plan.ts";
+import { t as msg } from "./i18n.ts";
 
 export const DIRS = { ready: "2_ready", uploaded: "3_uploaded", sources: "_sources", excluded: "_excluded", goggles: "goggles" } as const;
 export const STATE_FILE = "dji_state.json";
@@ -154,7 +155,7 @@ export async function exists(dir: FileSystemDirectoryHandle, name: string) {
 
 // 같은 볼륨이면 move() 로 즉시 이동, 미지원이면 복사 후 삭제
 export async function moveFile(from: FileSystemDirectoryHandle, name: string, to: FileSystemDirectoryHandle) {
-  if (await exists(to, name)) throw new Error(`${to.name}/${name} 이미 존재`);
+  if (await exists(to, name)) throw new Error(msg("err.exists", { path: `${to.name}/${name}` }));
   const h = await from.getFileHandle(name);
   if (typeof (h as any).move === "function") {
     try {

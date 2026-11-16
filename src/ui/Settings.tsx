@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { X } from "lucide-preact";
 import { defaultConfig, useApp, type Config } from "../app.tsx";
 import { DEFAULT_SETTINGS } from "../plan.ts";
-import { getLang, setLang, t, type Lang } from "../i18n.ts";
+import { getLang, LANGS, setLang, t, type Lang } from "../i18n.ts";
 
 export function SettingsSheet() {
   const app = useApp();
@@ -41,13 +41,14 @@ export function SettingsSheet() {
         </header>
         <div class="sheet-body">
           <h3>{t("set.general")}</h3>
-          <div class="seg-control neu-inset" role="radiogroup" aria-label={t("set.lang")}>
-            {(["ko", "en"] as Lang[]).map((l) => (
-              <button type="button" role="radio" aria-checked={lang === l} class={lang === l ? "on" : ""} onClick={() => setL(l)}>
-                {l === "ko" ? "한국어" : "English"}
-              </button>
-            ))}
-          </div>
+          <label class="field">
+            <span>{t("set.lang")}</span>
+            <select class="neu-inset" value={lang} onChange={(e) => setL((e.target as HTMLSelectElement).value as Lang)}>
+              {LANGS.map((l) => (
+                <option value={l.id} lang={l.id}>{l.label}</option>
+              ))}
+            </select>
+          </label>
 
           <h3>{t("set.auto")}</h3>
           <div class="grid3">

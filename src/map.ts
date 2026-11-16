@@ -1,6 +1,7 @@
 // 원형 미니맵: 기체 중심, 전체 궤적, 속도 기반 자동 배율.
 // 배경 지도 = Google Map Tiles API (2D 위성 타일, 브라우저에서 CORS 허용). 키가 없으면 궤적만 표시.
 import type { Telemetry } from "./telemetry.ts";
+import { locale, t as msg } from "./i18n.ts";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 const D = Math.PI / 180;
@@ -111,9 +112,9 @@ export class TileSource {
     this.session ??= fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(this.key)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mapType: this.mapType, language: "ko-KR", region: "KR" }),
+      body: JSON.stringify({ mapType: this.mapType, language: locale(), region: locale().slice(-2) }),
     }).then(async (r) => {
-      if (!r.ok) throw new Error(`Map Tiles 세션 실패 ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      if (!r.ok) throw new Error(msg("err.mapSession", { status: r.status, body: (await r.text()).slice(0, 200) }));
       return (await r.json()).session as string;
     });
     return this.session;

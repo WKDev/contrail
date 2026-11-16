@@ -1,4 +1,5 @@
 // YouTube Data API v3 — 브라우저에서 직접 호출 (Google Identity Services 토큰, 서버 없음)
+import { t as msg } from "./i18n.ts";
 
 const SCOPE = "https://www.googleapis.com/auth/youtube";
 const API = "https://www.googleapis.com/youtube/v3";
@@ -7,11 +8,13 @@ const API = "https://www.googleapis.com/youtube/v3";
 export const COST = { list: 1, videoInsert: 1600, playlistItemInsert: 50, playlistInsert: 50 };
 
 export class QuotaError extends Error {}
+// 재시도해도 소용없는 업로드 실패 (4xx)
+class UploadError extends Error {}
 
 // quotaExceeded = API 일일 quota, uploadLimitExceeded = 채널 업로드 개수 한도 (status 400/403 모두 가능)
 const LIMIT_RE = /quotaExceeded|uploadLimitExceeded|dailyLimitExceeded/;
 const limitMessage = (body: string) =>
-  /uploadLimitExceeded/.test(body) ? "YouTube 채널 업로드 개수 한도 초과 (uploadLimitExceeded)" : "YouTube API 일일 quota 초과";
+  /uploadLimitExceeded/.test(body) ? msg("err.ytChannelLimit") : msg("err.ytQuota");
 
 let token: { value: string; exp: number } | null = null;
 let client: any = null;
@@ -22,7 +25,7 @@ function loadGis() {
     const s = document.createElement("script");
     s.src = "https://accounts.google.com/gsi/client";
     s.onload = () => ok();
-    s.onerror = () => err(new Error("Google 로그인 스크립트 로드 실패"));
+    s.onerror = () => err(new Error(msg("err.gsiLoad")));
     document.head.appendChild(s);
   });
 }
@@ -31,7 +34,7 @@ export const signedIn = () => !!token && token.exp > Date.now() + 60_000;
 export const tokenMinutesLeft = () => (token ? (token.exp - Date.now()) / 60000 : 0);
 
 export async function signIn(clientId: string, prompt: "" | "consent" = "") {
-  if (!clientId) throw new Error("설정에서 Google OAuth 클라이언트 ID 를 입력하세요");
+  if (!clientId) throw new Error(msg("err.noClientId"));
   await loadGis();
   return new Promise<void>((ok, err) => {
     client = (window as any).google.accounts.oauth2.initTokenClient({
@@ -62,7 +65,7 @@ async function check(res: Response) {
 }
 
 async function api(path: string, params: Record<string, string>, init: RequestInit = {}) {
-  if (!token) throw new Error("Google 로그인이 필요합니다");
+  if (!token) throw new Error(msg("err.needLogin"));
   const res = await fetch(`${API}/${path}?${new URLSearchParams(params)}`, {
     ...init,
     headers: { Authorization: `Bearer ${token.value}`, "Content-Type": "application/json", ...init.headers },
@@ -144,7 +147,7 @@ function xhrPut(url: string, body: Blob, headers: Record<string, string>, onProg
 
 // resumable 업로드. 네트워크 오류 시 서버가 받은 위치부터 재시도
 export async function uploadVideo(file: File, meta: UploadMeta, onProgress: (sent: number, total: number) => void, signal?: AbortSignal) {
-  if (!token) throw new Error("Google 로그인이 필요합니다");
+  if (!token) throw new Error(msg("err.needLogin"));
   const init = await fetch(
     "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status,recordingDetails",
     {
@@ -165,7 +168,7 @@ export async function uploadVideo(file: File, meta: UploadMeta, onProgress: (sen
   );
   await check(init);
   const url = init.headers.get("Location");
-  if (!url) throw new Error("업로드 URL 을 받지 못함 (Location 헤더)");
+  if (!url) throw new Error(msg("err.noUploadUrl"));
 
   let offset = 0;
   for (let attempt = 0; ; attempt++) {
@@ -179,11 +182,11 @@ export async function uploadVideo(file: File, meta: UploadMeta, onProgress: (sen
       );
       if (x.status === 200 || x.status === 201) return JSON.parse(x.responseText).id as string;
       if (LIMIT_RE.test(x.responseText)) throw new QuotaError(limitMessage(x.responseText));
-      if (x.status < 500 && x.status !== 308) throw new Error(`업로드 실패 ${x.status}: ${x.responseText.slice(0, 300)}`);
+      if (x.status < 500 && x.status !== 308) throw new UploadError(msg("err.uploadFail", { status: x.status, body: x.responseText.slice(0, 300) }));
     } catch (e) {
-      if (e instanceof QuotaError || (e as Error).name === "AbortError" || /업로드 실패/.test(String(e))) throw e;
+      if (e instanceof QuotaError || (e as Error).name === "AbortError" || e instanceof UploadError) throw e;
     }
-    if (attempt >= 8) throw new Error("업로드 재시도 횟수 초과");
+    if (attempt >= 8) throw new Error(msg("err.uploadRetries"));
     await new Promise((r) => setTimeout(r, Math.min(30000, 1000 * 2 ** attempt)));
     // 서버가 받은 바이트 확인
     const st = await xhrPut(url, new Blob(), { "Content-Range": `bytes */${file.size}` }, () => {}, signal).catch(() => null);

@@ -7,7 +7,7 @@ import { addWidget, applyTemplate, applyTheme, drawHud, isRound, TEMPLATES, THEM
 import { snapMove, snapResize, type Corner, type SnapBox } from "../snap.ts";
 import { sampleAt, type Telemetry, type TelemetryPoint } from "../telemetry.ts";
 import { buildTrack } from "../map.ts";
-import { getLang, t } from "../i18n.ts";
+import { t, type I18nKey } from "../i18n.ts";
 
 export type Sel = { kind: "hud"; id: string } | { kind: "osd"; i: number } | null;
 type Handle = "move" | Corner;
@@ -387,13 +387,12 @@ export function StyleGallery({ layout, tel, thumb, onPick }: { layout: Layout; t
     }
     return { p: sampleAt(tel, best)!, t: best };
   }, [tel]);
-  const lang = getLang();
   return (
     <div class="style-grid" role="radiogroup" aria-label={t("lay.style")}>
       {THEMES.map((th) => (
         <button key={th.id} role="radio" aria-checked={cur === th.id} class={`style-card ${cur === th.id ? "on" : ""}`} onClick={() => onPick(th.id)}>
           <StyleThumb id={th.id} img={img} p={sample.p} t={sample.t} track={track} layout={layout} />
-          <span>{lang === "en" ? th.en : th.ko}</span>
+          <span>{themeName(th.id)}</span>
         </button>
       ))}
     </div>
@@ -417,17 +416,18 @@ function StyleThumb({ id, img, p, t, track, layout }: { id: string; img: HTMLIma
   return <canvas ref={ref} aria-hidden="true" />;
 }
 
-export const widgetName = (k: WidgetKind) => (getLang() === "en" ? WIDGET_INFO[k].en : WIDGET_INFO[k].ko);
+export const widgetName = (k: WidgetKind) => t(`widget.${k}` as I18nKey);
+const themeName = (id: string) => t(`theme.${id}` as I18nKey);
+const templateName = (id: string) => t(`tpl.${id}` as I18nKey);
 
 // 배치 템플릿: 위젯 구성·위치를 통째로 바꿈
 function TemplatePicker({ onPick }: { onPick: (id: string) => void }) {
-  const en = getLang() === "en";
   return (
     <div class="chip-row" role="group" aria-label={t("lay.template")}>
       {TEMPLATES.map((tp) => (
         <button key={tp.id} class="soft-btn sm" onClick={() => onPick(tp.id)}>
           <TemplateGlyph widgets={tp.widgets} />
-          {en ? tp.en : tp.ko}
+          {templateName(tp.id)}
         </button>
       ))}
     </div>
@@ -452,7 +452,6 @@ function TemplateGlyph({ widgets }: { widgets: Omit<Widget, "id">[] }) {
 // 화면에 올린 위젯 목록: 고르기(화면과 연동) / 위젯별 스타일 / 빼기, 위에서 새 위젯 추가
 function WidgetList({ ed, setEd }: { ed: EditState; setEd: SetEd }) {
   const ws = widgetsOf(ed.draft);
-  const en = getLang() === "en";
   const [adding, setAdding] = useState(false);
   const list = useRef<HTMLUListElement>(null);
   const selId = ed.sel?.kind === "hud" ? ed.sel.id : null;
@@ -500,7 +499,7 @@ function WidgetList({ ed, setEd }: { ed: EditState; setEd: SetEd }) {
               <span class="spacer" />
               <select class="mini-select" value={w.style ?? ""} aria-label={t("lay.widgetStyle")} title={t("lay.widgetStyle")} onClick={(e) => e.stopPropagation()} onChange={(e) => patch(w.id, { style: (e.target as HTMLSelectElement).value || undefined })}>
                 <option value="">{t("lay.followTheme")}</option>
-                {THEMES.map((th) => <option value={th.id}>{en ? th.en : th.ko}</option>)}
+                {THEMES.map((th) => <option value={th.id}>{themeName(th.id)}</option>)}
               </select>
               <button class="icon-btn sm" aria-label={t("lay.removeWidget")} title={t("lay.removeWidget")} onClick={(e) => { e.stopPropagation(); remove(w.id); }}><Trash2 size={14} /></button>
             </li>

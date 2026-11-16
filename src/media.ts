@@ -1,5 +1,6 @@
 // 브라우저 <video> 로 프레임 추출 (LRF 프록시 우선 → 빠름)
 import { SIM_H, SIM_W } from "./sim.ts";
+import { t as msg } from "./i18n.ts";
 
 function loadVideo(file: File) {
   const v = document.createElement("video");
@@ -8,9 +9,9 @@ function loadVideo(file: File) {
   const url = URL.createObjectURL(file);
   v.src = url;
   const ready = new Promise<void>((ok, err) => {
-    const timer = setTimeout(() => err(new Error(`메타데이터 로드 시간 초과: ${file.name}`)), 20000);
+    const timer = setTimeout(() => err(new Error(msg("err.metaTimeout", { name: file.name }))), 20000);
     v.onloadedmetadata = () => (clearTimeout(timer), ok());
-    v.onerror = () => (clearTimeout(timer), err(new Error(`재생 불가: ${file.name} (${v.error?.message ?? ""})`)));
+    v.onerror = () => (clearTimeout(timer), err(new Error(msg("err.unplayable", { name: file.name, msg: v.error?.message ?? "" }))));
   });
   return { v, ready, dispose: () => URL.revokeObjectURL(url) };
 }

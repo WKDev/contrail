@@ -50,9 +50,9 @@ export function FlightsView() {
           <Search size={16} strokeWidth={1.75} />
           <input value={app.query} onInput={(e) => app.setQuery((e.target as HTMLInputElement).value)} placeholder={t("search")} aria-label={t("search")} />
         </label>
-        <div class="seg-control neu-inset" role="radiogroup" aria-label="view">
-          <button role="radio" aria-checked={mode === "grid"} class={mode === "grid" ? "on" : ""} onClick={() => setMode("grid")} aria-label="grid"><LayoutGrid size={15} strokeWidth={1.75} /></button>
-          <button role="radio" aria-checked={mode === "list"} class={mode === "list" ? "on" : ""} onClick={() => setMode("list")} aria-label="list"><List size={15} strokeWidth={1.75} /></button>
+        <div class="seg-control neu-inset" role="radiogroup" aria-label={t("a11y.view")}>
+          <button role="radio" aria-checked={mode === "grid"} class={mode === "grid" ? "on" : ""} onClick={() => setMode("grid")} aria-label={t("a11y.grid")}><LayoutGrid size={15} strokeWidth={1.75} /></button>
+          <button role="radio" aria-checked={mode === "list"} class={mode === "list" ? "on" : ""} onClick={() => setMode("list")} aria-label={t("a11y.list")}><List size={15} strokeWidth={1.75} /></button>
         </div>
         <BatchButton />
         <button class="soft-btn" onClick={() => app.setSortNew(!app.sortNew)}>

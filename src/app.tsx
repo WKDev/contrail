@@ -742,7 +742,7 @@ export function App() {
     const clips = [];
     for (const c of f.clips) {
       const ref = proxyRef(ix, c.stem);
-      if (!ref) throw new Error(`${c.stem}: missing`);
+      if (!ref) throw new Error(t("tel.missing", { name: c.stem }));
       clips.push({ file: await ref.handle.getFile(), start: c.start, duration: c.duration });
     }
     for (const [i, g] of list.entries()) {

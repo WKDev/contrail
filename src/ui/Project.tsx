@@ -153,7 +153,7 @@ export function Project({ f }: { f: Flight }) {
             {fmtDay(f.start)} · {fmtTime(f.start)} – {fmtTime(f.end)} · {t("flight.clips", { n: f.clips.length })} · {fmtDur(f.duration)} · {fmtSize(origSize)}
           </p>
         </div>
-        <ol class="stepper" aria-label="pipeline">
+        <ol class="stepper" aria-label={t("a11y.pipeline")}>
           {steps.map((s, i) => (
             <li class={s.state} key={s.label}>
               {i > 0 && <span class="step-line" aria-hidden="true" />}
@@ -731,8 +731,8 @@ function GogglesPanel({ f, job }: { f: Flight; job: Job | null }) {
             {link.view === "full" && <p class="note warn small">{t("gv.fullHint")}</p>}
             <div class="row">
               <span class="muted small">{t("gog.nudge")}</span>
-              <button class="icon-btn neu" aria-label="-1 frame" onClick={() => { app.nudgeGoggles(f, link.file, -frame); setCompare(open ? { file: link.file, imgs: null } : compare); }}><Minus size={14} /></button>
-              <button class="icon-btn neu" aria-label="+1 frame" onClick={() => { app.nudgeGoggles(f, link.file, frame); setCompare(open ? { file: link.file, imgs: null } : compare); }}><Plus size={14} /></button>
+              <button class="icon-btn neu" aria-label={t("a11y.frameBack")} onClick={() => { app.nudgeGoggles(f, link.file, -frame); setCompare(open ? { file: link.file, imgs: null } : compare); }}><Minus size={14} /></button>
+              <button class="icon-btn neu" aria-label={t("a11y.frameFwd")} onClick={() => { app.nudgeGoggles(f, link.file, frame); setCompare(open ? { file: link.file, imgs: null } : compare); }}><Plus size={14} /></button>
               <span class="spacer" />
               <button class="soft-btn sm" onClick={() => setCompare(open ? null : { file: link.file, imgs: null })} disabled={!info}>{open ? <EyeOff size={14} /> : <Eye size={14} />} {t("gog.compare")}</button>
             </div>

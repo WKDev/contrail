@@ -1,6 +1,7 @@
 // 최소 MP4 파서/병합기. 재인코딩 없이 첫 번째 비디오 트랙의 샘플만 이어붙인다.
 // 브라우저(File.slice)와 Node(fs) 모두에서 쓰도록 Reader/Writer 인터페이스만 의존한다.
 // 출력 레이아웃: ftyp | moov(co64) | mdat(64bit)  → faststart, 순차 쓰기 가능.
+import { t as msg } from "./i18n.ts";
 
 export interface Reader {
   size: number;
@@ -82,7 +83,7 @@ async function topLevel(r: Reader) {
     const type = td.decode(h.subarray(4, 8));
     if (size === 1) size = Number(dv.getBigUint64(8));
     else if (size === 0) size = r.size - p;
-    if (size < 8) throw new Error(`잘못된 MP4 박스 @${p}`);
+    if (size < 8) throw new Error(msg("err.mp4Box", { p }));
     boxes.push({ type, pos: p, size });
     p += size;
   }
@@ -94,7 +95,7 @@ export async function parse(r: Reader, kind = "video"): Promise<Track> {
   const top = await topLevel(r);
   const ftypB = top.find((b) => b.type === "ftyp");
   const moovB = top.find((b) => b.type === "moov");
-  if (!moovB) throw new Error("moov 박스 없음 (녹화가 비정상 종료된 파일?)");
+  if (!moovB) throw new Error(msg("err.noMoov"));
   const ftyp = ftypB ? await r.read(ftypB.pos, ftypB.size) : new Uint8Array();
   const buf = await r.read(moovB.pos, moovB.size);
   const moov = children(buf)[0];
@@ -105,7 +106,7 @@ export async function parse(r: Reader, kind = "video"): Promise<Track> {
     const stsd = find(buf, b, ["mdia", "minf", "stbl", "stsd"]);
     return !!stsd && td.decode(stsd.raw.subarray(20, 24)) === kind;
   });
-  if (!trak) throw new Error(kind === "video" ? "비디오 트랙 없음" : `${kind} 트랙 없음`);
+  if (!trak) throw new Error(kind === "video" ? msg("err.noVideoTrack") : msg("err.noTrack", { kind }));
   const g = (path: string[]) => find(buf, trak, path);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const u32 = (p: number) => dv.getUint32(p);
@@ -345,8 +346,8 @@ export function buildMoov(tracks: Track[], mdatData: number) {
 export function checkCompatible(tracks: Track[]) {
   const t0 = tracks[0];
   for (const t of tracks.slice(1)) {
-    if (t.timescale !== t0.timescale) throw new Error("timescale 이 서로 달라 병합 불가");
-    if (!sameBytes(t.stsd, t0.stsd)) throw new Error("코덱 설정(stsd)이 서로 달라 병합 불가");
+    if (t.timescale !== t0.timescale) throw new Error(msg("err.timescale"));
+    if (!sameBytes(t.stsd, t0.stsd)) throw new Error(msg("err.stsd"));
   }
 }
 
@@ -364,7 +365,7 @@ export async function merge(
   const moovLen = buildMoov(tracks, 0).length;
   const mdatData = ftyp.length + moovLen + 16;
   const moov = buildMoov(tracks, mdatData);
-  if (moov.length !== moovLen) throw new Error("moov 크기 불일치");
+  if (moov.length !== moovLen) throw new Error(msg("err.moovSize"));
 
   const mdatHdr = new Buf();
   mdatHdr.u32(1);

@@ -1,7 +1,18 @@
-// 한국어(기본) / 영어. t("key", { n: 3 }) — {n} 치환
+// 영어(기본)·한국어·일본어·중국어(간체)·스페인어. t("key", { n: 3 }) — {n} 치환
+// 키 목록은 ko 가 원본, 다른 언어는 Record<Key, string> 이라 빠진 키는 타입 오류
 import { useEffect, useState } from "preact/hooks";
+import { es } from "./locales/es.ts";
+import { ja } from "./locales/ja.ts";
+import { zh } from "./locales/zh.ts";
 
-export type Lang = "ko" | "en";
+export const LANGS = [
+  { id: "en", label: "English", locale: "en-US" },
+  { id: "ko", label: "한국어", locale: "ko-KR" },
+  { id: "ja", label: "日本語", locale: "ja-JP" },
+  { id: "zh", label: "简体中文", locale: "zh-CN" },
+  { id: "es", label: "Español", locale: "es-ES" },
+] as const;
+export type Lang = (typeof LANGS)[number]["id"];
 
 const ko = {
   appName: "Contrail",
@@ -321,6 +332,82 @@ const ko = {
   "gm.todo": "고글 영상 {n}개를 하나로 이어붙입니다.",
   "gm.run": "고글 영상 병합",
   "toast.overlay": "{name} 오버레이 완료",
+  "meta.description": "드론 영상을 비행 단위로 자동 병합하고 HUD 오버레이·고글 OSD 를 합성합니다. 영상은 내 컴퓨터 밖으로 나가지 않습니다.",
+  "a11y.view": "보기 방식",
+  "a11y.grid": "격자로 보기",
+  "a11y.list": "목록으로 보기",
+  "a11y.pipeline": "진행 단계",
+  "a11y.frameBack": "1프레임 앞당기기",
+  "a11y.frameFwd": "1프레임 늦추기",
+  "err.mp4Box": "잘못된 MP4 박스 @{p}",
+  "err.noMoov": "moov 박스 없음 (녹화가 비정상 종료된 파일?)",
+  "err.noVideoTrack": "비디오 트랙 없음",
+  "err.noTrack": "{kind} 트랙 없음",
+  "err.timescale": "timescale 이 서로 달라 병합 불가",
+  "err.stsd": "코덱 설정(stsd)이 서로 달라 병합 불가",
+  "err.moovSize": "moov 크기 불일치",
+  "err.codec": "지원하지 않는 코덱: {c}",
+  "err.noResponse": "{what} 응답 없음 ({s}초)",
+  "err.encoder": "인코더",
+  "err.decoder": "디코더",
+  "err.gogDecoder": "고글 디코더",
+  "err.encode": "이 브라우저에서 {w}×{h} {fps}fps H.264 인코딩 불가",
+  "err.decode": "이 브라우저에서 {c} 디코딩 불가 (HEVC 는 하드웨어 디코딩이 되는 Chrome/Edge 필요)",
+  "err.decoderStuck": "디코더 응답 없음",
+  "err.renderStalled": "렌더가 1분 넘게 멈춤 (디코더/인코더 응답 없음)",
+  "err.noAvcC": "인코더 설정(avcC)을 받지 못함",
+  "err.noFrames": "출력 프레임이 없음",
+  "err.bFrames": "인코더가 B-프레임을 출력함 (미지원)",
+  "warn.gogglesRead": "고글 영상 {name} 을 읽지 못해 그 구간은 OSD 없이 진행: {msg}",
+  "warn.noMap": "지도 없이 진행: {msg}",
+  "warn.badFrame": "깨진 프레임을 건너뜀 ({at} 부근): {msg}",
+  "err.gsiLoad": "Google 로그인 스크립트 로드 실패",
+  "err.noClientId": "설정에서 Google OAuth 클라이언트 ID 를 입력하세요",
+  "err.needLogin": "Google 로그인이 필요합니다",
+  "err.noUploadUrl": "업로드 URL 을 받지 못함 (Location 헤더)",
+  "err.uploadFail": "업로드 실패 {status}: {body}",
+  "err.uploadRetries": "업로드 재시도 횟수 초과",
+  "err.ytChannelLimit": "YouTube 채널 업로드 개수 한도 초과 (uploadLimitExceeded)",
+  "err.ytQuota": "YouTube API 일일 quota 초과",
+  "err.mapSession": "Map Tiles 세션 실패 {status}: {body}",
+  "err.metaTimeout": "메타데이터 로드 시간 초과: {name}",
+  "err.unplayable": "재생 불가: {name} ({msg})",
+  "err.exists": "{path} 이미 존재",
+  "widget.attitude": "자세계",
+  "widget.compass": "방위계 (원형)",
+  "widget.tape": "방위 테이프",
+  "widget.horizon": "수평선·피치 사다리",
+  "widget.map": "미니맵",
+  "widget.readouts": "속도·고도·상승률 줄",
+  "widget.speed": "속도",
+  "widget.alt": "고도",
+  "widget.vs": "상승률",
+  "widget.dist": "이륙 지점 거리",
+  "widget.clock": "비행 시간",
+  "widget.coords": "GPS 좌표",
+  "tpl.bottom": "하단 계기",
+  "tpl.corners": "모서리",
+  "tpl.compact": "작게",
+  "tpl.center": "가운데 계기",
+  "tpl.racing": "레이싱",
+  "tpl.fighter": "전투기",
+  "tpl.data": "수치 위주",
+  "tpl.minimal": "최소",
+  "theme.classic": "클래식",
+  "theme.glass": "글라스",
+  "theme.mono": "모노 라인",
+  "theme.fighter": "전투기 HUD",
+  "theme.amber": "앰버 계기",
+  "theme.racing": "레이싱",
+  "theme.cinema": "시네마 미니멀",
+  "theme.pfd": "글래스 콕핏",
+  "theme.neon": "네온",
+  "theme.contrast": "고대비",
+  "theme.tactical": "택티컬",
+  "theme.blueprint": "블루프린트",
+  "theme.sunset": "선셋",
+  "theme.paper": "화이트 카드",
+  "theme.sport": "스포츠",
   close: "닫기",
 } as const;
 
@@ -644,26 +731,128 @@ const en: Record<Key, string> = {
   "gm.todo": "Join the {n} goggles recordings into one.",
   "gm.run": "Merge goggles",
   "toast.overlay": "{name} overlay ready",
+  "meta.description": "Automatically merges drone footage by flight and composites a HUD overlay and goggles OSD. Your videos never leave your computer.",
+  "a11y.view": "View",
+  "a11y.grid": "Grid view",
+  "a11y.list": "List view",
+  "a11y.pipeline": "Pipeline",
+  "a11y.frameBack": "Back 1 frame",
+  "a11y.frameFwd": "Forward 1 frame",
+  "err.mp4Box": "Invalid MP4 box @{p}",
+  "err.noMoov": "No moov box (was the recording cut off?)",
+  "err.noVideoTrack": "No video track",
+  "err.noTrack": "No {kind} track",
+  "err.timescale": "Cannot merge: the clips use different timescales",
+  "err.stsd": "Cannot merge: the clips use different codec settings (stsd)",
+  "err.moovSize": "moov size mismatch",
+  "err.codec": "Unsupported codec: {c}",
+  "err.noResponse": "{what} not responding ({s}s)",
+  "err.encoder": "Encoder",
+  "err.decoder": "Decoder",
+  "err.gogDecoder": "Goggles decoder",
+  "err.encode": "This browser cannot encode H.264 at {w}×{h} {fps}fps",
+  "err.decode": "This browser cannot decode {c} (HEVC needs Chrome/Edge with hardware decoding)",
+  "err.decoderStuck": "Decoder not responding",
+  "err.renderStalled": "Rendering stalled for over a minute (decoder/encoder not responding)",
+  "err.noAvcC": "The encoder did not return its configuration (avcC)",
+  "err.noFrames": "No output frames",
+  "err.bFrames": "The encoder produced B-frames (not supported)",
+  "warn.gogglesRead": "Couldn’t read goggles video {name}; continuing that part without OSD: {msg}",
+  "warn.noMap": "Continuing without the map: {msg}",
+  "warn.badFrame": "Skipped a corrupt frame (near {at}): {msg}",
+  "err.gsiLoad": "Failed to load the Google sign-in script",
+  "err.noClientId": "Enter a Google OAuth client ID in Settings",
+  "err.needLogin": "Google sign-in required",
+  "err.noUploadUrl": "Did not receive an upload URL (Location header)",
+  "err.uploadFail": "Upload failed {status}: {body}",
+  "err.uploadRetries": "Upload retry limit reached",
+  "err.ytChannelLimit": "YouTube channel upload limit reached (uploadLimitExceeded)",
+  "err.ytQuota": "YouTube API daily quota exceeded",
+  "err.mapSession": "Map Tiles session failed {status}: {body}",
+  "err.metaTimeout": "Timed out loading metadata: {name}",
+  "err.unplayable": "Cannot play: {name} ({msg})",
+  "err.exists": "{path} already exists",
+  "widget.attitude": "Attitude",
+  "widget.compass": "Compass",
+  "widget.tape": "Heading tape",
+  "widget.horizon": "Horizon ladder",
+  "widget.map": "Minimap",
+  "widget.readouts": "Speed/alt/VS row",
+  "widget.speed": "Speed",
+  "widget.alt": "Altitude",
+  "widget.vs": "Vertical speed",
+  "widget.dist": "Distance home",
+  "widget.clock": "Flight time",
+  "widget.coords": "GPS position",
+  "tpl.bottom": "Bottom gauges",
+  "tpl.corners": "Corners",
+  "tpl.compact": "Compact",
+  "tpl.center": "Center",
+  "tpl.racing": "Racing",
+  "tpl.fighter": "Fighter",
+  "tpl.data": "Data",
+  "tpl.minimal": "Minimal",
+  "theme.classic": "Classic",
+  "theme.glass": "Glass",
+  "theme.mono": "Mono line",
+  "theme.fighter": "Fighter HUD",
+  "theme.amber": "Amber avionics",
+  "theme.racing": "Racing",
+  "theme.cinema": "Cinema minimal",
+  "theme.pfd": "Glass cockpit",
+  "theme.neon": "Neon",
+  "theme.contrast": "High contrast",
+  "theme.tactical": "Tactical",
+  "theme.blueprint": "Blueprint",
+  "theme.sunset": "Sunset",
+  "theme.paper": "White card",
+  "theme.sport": "Sport",
   close: "Close",
 };
 
-const dicts: Record<Lang, Record<Key, string>> = { ko, en };
+const dicts: Record<Lang, Record<Key, string>> = { en, ko, ja, zh, es };
+export const dictionaries = dicts;
 const LANG_KEY = "dji-uploader-lang";
+const isLang = (v: unknown): v is Lang => LANGS.some((l) => l.id === v);
+const langOf = (tag: string | null | undefined) => {
+  const v = tag?.toLowerCase().split(/[-_]/)[0];
+  return isLang(v) ? v : null;
+};
+// ?lang= (ouwork.io 링크) > 지난 선택 > 브라우저 언어 > 영어
+const fromUrl = (() => {
+  try {
+    return langOf(new URLSearchParams(location.search).get("lang"));
+  } catch {
+    return null;
+  }
+})();
 let lang: Lang = (() => {
+  if (fromUrl) return fromUrl;
   try {
     const s = localStorage.getItem(LANG_KEY);
-    if (s === "ko" || s === "en") return s;
+    if (isLang(s)) return s;
   } catch {}
-  return navigator.language.startsWith("ko") ? "ko" : "en";
+  const prefs = typeof navigator === "undefined" ? [] : navigator.languages?.length ? navigator.languages : [navigator.language];
+  for (const p of prefs) {
+    const l = langOf(p);
+    if (l) return l;
+  }
+  return "en";
 })();
 const subs = new Set<() => void>();
+
+function applyDocument() {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = lang;
+  document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta.description"));
+}
 
 export function setLang(l: Lang) {
   lang = l;
   try {
     localStorage.setItem(LANG_KEY, l);
   } catch {}
-  document.documentElement.lang = l;
+  applyDocument();
   subs.forEach((f) => f());
 }
 export const getLang = () => lang;
@@ -678,16 +867,25 @@ export function useLang() {
 }
 
 export function t(key: Key, vars?: Record<string, string | number>) {
-  let s: string = dicts[lang][key] ?? ko[key] ?? key;
-  if (vars)
-    for (const [k, v] of Object.entries(vars)) {
-      // {n|단수|복수}
-      s = s.replace(new RegExp(`\\{${k}\\|([^|}]*)\\|([^}]*)\\}`, "g"), (_, one, many) => (Number(v) === 1 ? one : many));
-      s = s.replaceAll(`{${k}}`, String(v));
-    }
-  return s;
+  const s: string = dicts[lang][key] ?? en[key] ?? key;
+  if (!vars) return s;
+  // {n} 치환, {n|단수|복수}. 한 번에 바꿔서 값 안의 {…}·$& 는 그대로 둔다
+  return s.replace(/\{(\w+)(?:\|([^|}]*)\|([^}]*))?\}/g, (m, k: string, one?: string, many?: string) => {
+    if (!(k in vars)) return m;
+    const v = vars[k];
+    return one !== undefined ? (Number(v) === 1 ? one : many!) : String(v);
+  });
 }
 export type I18nKey = Key;
+
+if (fromUrl) {
+  try {
+    localStorage.setItem(LANG_KEY, fromUrl);
+  } catch {}
+}
+applyDocument();
+
+export const locale = () => LANGS.find((l) => l.id === lang)!.locale;
 
 export const fmtDur = (sec: number) => {
   const h = Math.floor(sec / 3600);
@@ -697,8 +895,8 @@ export const fmtDur = (sec: number) => {
 };
 export const fmtSize = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
 export const fmtTime = (ms: number) =>
-  new Date(ms).toLocaleTimeString(lang === "ko" ? "ko-KR" : "en-US", { hour: "numeric", minute: "2-digit" });
+  new Date(ms).toLocaleTimeString(locale(), { hour: "numeric", minute: "2-digit" });
 export const fmtDay = (ms: number) =>
-  new Date(ms).toLocaleDateString(lang === "ko" ? "ko-KR" : "en-US", { month: "long", day: "numeric", weekday: "short" });
+  new Date(ms).toLocaleDateString(locale(), { month: "long", day: "numeric", weekday: "short" });
 export const fmtDayShort = (ms: number) =>
-  new Date(ms).toLocaleDateString(lang === "ko" ? "ko-KR" : "en-US", { month: "short", day: "numeric" });
+  new Date(ms).toLocaleDateString(locale(), { month: "short", day: "numeric" });

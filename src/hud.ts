@@ -18,8 +18,6 @@ export interface HudExtras {
 type HudBoxes = Pick<Layout, "attitude" | "heading" | "map" | "readouts">;
 export interface HudTheme {
   id: string;
-  ko: string;
-  en: string;
   layout: string; // 이 테마에 어울리는 기본 배치 (TEMPLATES id)
   fg: string; // 선·글자
   accent: string; // 기체 심볼·포인터
@@ -44,19 +42,19 @@ const ASPECT = 16 / 9;
 const g = (x: number, y: number, w: number): Box => ({ x, y, w, h: w * ASPECT });
 
 // ---------- 위젯 ----------
-export const WIDGET_INFO: Record<WidgetKind, { ko: string; en: string; round: boolean; box: Box; gps?: boolean }> = {
-  attitude: { ko: "자세계", en: "Attitude", round: true, box: g(0.44, 0.38, 0.12) },
-  compass: { ko: "방위계 (원형)", en: "Compass", round: true, box: g(0.44, 0.38, 0.12) },
-  tape: { ko: "방위 테이프", en: "Heading tape", round: false, box: { x: 0.36, y: 0.035, w: 0.28, h: 0.06 } },
-  horizon: { ko: "수평선·피치 사다리", en: "Horizon ladder", round: false, box: { x: 0.35, y: 0.3, w: 0.3, h: 0.4 } },
-  map: { ko: "미니맵", en: "Minimap", round: true, box: g(0.86, 0.6, 0.12), gps: true },
-  readouts: { ko: "속도·고도·상승률 줄", en: "Speed/alt/VS row", round: false, box: { x: 0.31, y: 0.795, w: 0.5, h: 0.04 } },
-  speed: { ko: "속도", en: "Speed", round: false, box: { x: 0.03, y: 0.42, w: 0.11, h: 0.075 } },
-  alt: { ko: "고도", en: "Altitude", round: false, box: { x: 0.86, y: 0.42, w: 0.11, h: 0.075 } },
-  vs: { ko: "상승률", en: "Vertical speed", round: false, box: { x: 0.86, y: 0.51, w: 0.11, h: 0.075 } },
-  dist: { ko: "이륙 지점 거리", en: "Distance home", round: false, box: { x: 0.03, y: 0.51, w: 0.11, h: 0.075 }, gps: true },
-  clock: { ko: "비행 시간", en: "Flight time", round: false, box: { x: 0.03, y: 0.035, w: 0.1, h: 0.06 } },
-  coords: { ko: "GPS 좌표", en: "GPS position", round: false, box: { x: 0.7, y: 0.035, w: 0.27, h: 0.04 }, gps: true },
+export const WIDGET_INFO: Record<WidgetKind, { round: boolean; box: Box; gps?: boolean }> = {
+  attitude: { round: true, box: g(0.44, 0.38, 0.12) },
+  compass: { round: true, box: g(0.44, 0.38, 0.12) },
+  tape: { round: false, box: { x: 0.36, y: 0.035, w: 0.28, h: 0.06 } },
+  horizon: { round: false, box: { x: 0.35, y: 0.3, w: 0.3, h: 0.4 } },
+  map: { round: true, box: g(0.86, 0.6, 0.12), gps: true },
+  readouts: { round: false, box: { x: 0.31, y: 0.795, w: 0.5, h: 0.04 } },
+  speed: { round: false, box: { x: 0.03, y: 0.42, w: 0.11, h: 0.075 } },
+  alt: { round: false, box: { x: 0.86, y: 0.42, w: 0.11, h: 0.075 } },
+  vs: { round: false, box: { x: 0.86, y: 0.51, w: 0.11, h: 0.075 } },
+  dist: { round: false, box: { x: 0.03, y: 0.51, w: 0.11, h: 0.075 }, gps: true },
+  clock: { round: false, box: { x: 0.03, y: 0.035, w: 0.1, h: 0.06 } },
+  coords: { round: false, box: { x: 0.7, y: 0.035, w: 0.27, h: 0.04 }, gps: true },
 };
 export const WIDGET_KINDS = Object.keys(WIDGET_INFO) as WidgetKind[];
 export const isRound = (w: Widget) => WIDGET_INFO[w.kind].round;
@@ -65,16 +63,16 @@ export const newWidgetId = () => `w${Date.now().toString(36)}${(seq++).toString(
 const W_ = (kind: WidgetKind, b: Box, style?: string): Omit<Widget, "id"> => ({ kind, ...b, ...(style ? { style } : {}) });
 
 // 배치 템플릿 (1920x1080 기준, 하단 13% 는 고글 OSD 자리로 비워 둠)
-export interface HudTemplate { id: string; ko: string; en: string; widgets: Omit<Widget, "id">[] }
+export interface HudTemplate { id: string; widgets: Omit<Widget, "id">[] }
 export const TEMPLATES: HudTemplate[] = [
-  { id: "bottom", ko: "하단 계기", en: "Bottom gauges", widgets: [W_("attitude", g(0.01875, 0.6, 0.1229)), W_("compass", g(0.1594, 0.6, 0.1229)), W_("map", g(0.8583, 0.6, 0.1229)), W_("readouts", { x: 0.31, y: 0.795, w: 0.5, h: 0.04 })] },
-  { id: "corners", ko: "모서리", en: "Corners", widgets: [W_("attitude", g(0.02, 0.6, 0.12)), W_("tape", { x: 0.36, y: 0.035, w: 0.28, h: 0.065 }), W_("map", g(0.86, 0.6, 0.12)), W_("readouts", { x: 0.25, y: 0.795, w: 0.5, h: 0.045 })] },
-  { id: "compact", ko: "작게", en: "Compact", widgets: [W_("attitude", g(0.015, 0.69, 0.085)), W_("compass", g(0.105, 0.69, 0.085)), W_("map", g(0.9, 0.69, 0.085)), W_("readouts", { x: 0.2, y: 0.8, w: 0.3, h: 0.03 })] },
-  { id: "center", ko: "가운데 계기", en: "Center", widgets: [W_("attitude", g(0.42, 0.42, 0.16)), W_("tape", { x: 0.38, y: 0.725, w: 0.24, h: 0.055 }), W_("map", g(0.86, 0.6, 0.12)), W_("readouts", { x: 0.3, y: 0.35, w: 0.4, h: 0.05 })] },
-  { id: "racing", ko: "레이싱", en: "Racing", widgets: [W_("attitude", g(0.765, 0.62, 0.105)), W_("tape", { x: 0.38, y: 0.035, w: 0.24, h: 0.06 }), W_("map", g(0.88, 0.62, 0.105)), W_("readouts", { x: 0.02, y: 0.69, w: 0.3, h: 0.14 })] },
-  { id: "fighter", ko: "전투기", en: "Fighter", widgets: [W_("horizon", { x: 0.33, y: 0.28, w: 0.34, h: 0.44 }), W_("tape", { x: 0.36, y: 0.035, w: 0.28, h: 0.06 }), W_("speed", { x: 0.2, y: 0.46, w: 0.1, h: 0.07 }), W_("alt", { x: 0.7, y: 0.46, w: 0.1, h: 0.07 }), W_("vs", { x: 0.7, y: 0.55, w: 0.1, h: 0.07 }), W_("clock", { x: 0.03, y: 0.035, w: 0.1, h: 0.06 })] },
-  { id: "data", ko: "수치 위주", en: "Data", widgets: [W_("speed", { x: 0.03, y: 0.62, w: 0.12, h: 0.08 }), W_("alt", { x: 0.16, y: 0.62, w: 0.12, h: 0.08 }), W_("vs", { x: 0.29, y: 0.62, w: 0.12, h: 0.08 }), W_("dist", { x: 0.42, y: 0.62, w: 0.12, h: 0.08 }), W_("clock", { x: 0.03, y: 0.035, w: 0.1, h: 0.06 }), W_("coords", { x: 0.7, y: 0.035, w: 0.27, h: 0.04 }), W_("map", g(0.86, 0.6, 0.12))] },
-  { id: "minimal", ko: "최소", en: "Minimal", widgets: [W_("speed", { x: 0.03, y: 0.72, w: 0.1, h: 0.07 }), W_("alt", { x: 0.87, y: 0.72, w: 0.1, h: 0.07 })] },
+  { id: "bottom", widgets: [W_("attitude", g(0.01875, 0.6, 0.1229)), W_("compass", g(0.1594, 0.6, 0.1229)), W_("map", g(0.8583, 0.6, 0.1229)), W_("readouts", { x: 0.31, y: 0.795, w: 0.5, h: 0.04 })] },
+  { id: "corners", widgets: [W_("attitude", g(0.02, 0.6, 0.12)), W_("tape", { x: 0.36, y: 0.035, w: 0.28, h: 0.065 }), W_("map", g(0.86, 0.6, 0.12)), W_("readouts", { x: 0.25, y: 0.795, w: 0.5, h: 0.045 })] },
+  { id: "compact", widgets: [W_("attitude", g(0.015, 0.69, 0.085)), W_("compass", g(0.105, 0.69, 0.085)), W_("map", g(0.9, 0.69, 0.085)), W_("readouts", { x: 0.2, y: 0.8, w: 0.3, h: 0.03 })] },
+  { id: "center", widgets: [W_("attitude", g(0.42, 0.42, 0.16)), W_("tape", { x: 0.38, y: 0.725, w: 0.24, h: 0.055 }), W_("map", g(0.86, 0.6, 0.12)), W_("readouts", { x: 0.3, y: 0.35, w: 0.4, h: 0.05 })] },
+  { id: "racing", widgets: [W_("attitude", g(0.765, 0.62, 0.105)), W_("tape", { x: 0.38, y: 0.035, w: 0.24, h: 0.06 }), W_("map", g(0.88, 0.62, 0.105)), W_("readouts", { x: 0.02, y: 0.69, w: 0.3, h: 0.14 })] },
+  { id: "fighter", widgets: [W_("horizon", { x: 0.33, y: 0.28, w: 0.34, h: 0.44 }), W_("tape", { x: 0.36, y: 0.035, w: 0.28, h: 0.06 }), W_("speed", { x: 0.2, y: 0.46, w: 0.1, h: 0.07 }), W_("alt", { x: 0.7, y: 0.46, w: 0.1, h: 0.07 }), W_("vs", { x: 0.7, y: 0.55, w: 0.1, h: 0.07 }), W_("clock", { x: 0.03, y: 0.035, w: 0.1, h: 0.06 })] },
+  { id: "data", widgets: [W_("speed", { x: 0.03, y: 0.62, w: 0.12, h: 0.08 }), W_("alt", { x: 0.16, y: 0.62, w: 0.12, h: 0.08 }), W_("vs", { x: 0.29, y: 0.62, w: 0.12, h: 0.08 }), W_("dist", { x: 0.42, y: 0.62, w: 0.12, h: 0.08 }), W_("clock", { x: 0.03, y: 0.035, w: 0.1, h: 0.06 }), W_("coords", { x: 0.7, y: 0.035, w: 0.27, h: 0.04 }), W_("map", g(0.86, 0.6, 0.12))] },
+  { id: "minimal", widgets: [W_("speed", { x: 0.03, y: 0.72, w: 0.1, h: 0.07 }), W_("alt", { x: 0.87, y: 0.72, w: 0.1, h: 0.07 })] },
 ];
 const withIds = (ws: Omit<Widget, "id">[]): Widget[] => ws.map((w) => ({ ...structuredClone(w), id: newWidgetId() }));
 
@@ -83,22 +81,22 @@ const MONO = `ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
 const base = { north: "#ff6b5b", outline: "rgba(0,0,0,0.75)", glow: 0, font: SANS, weight: 600, ring: "rgba(255,255,255,0.9)", line: 1, labels: true, alpha: 1 };
 
 export const THEMES: HudTheme[] = [
-  { ...base, id: "classic", ko: "클래식", en: "Classic", layout: "bottom", fg: "#fff", accent: "#ffd23f", sky: "rgba(46,116,204,0.82)", ground: "rgba(122,78,38,0.82)", face: "rgba(15,18,24,0.62)", heading: "rose", readouts: "line" },
-  { ...base, id: "glass", ko: "글라스", en: "Glass", layout: "bottom", fg: "#fff", accent: "#7fe3ff", outline: "rgba(0,0,0,0.45)", weight: 500, sky: "rgba(110,170,255,0.32)", ground: "rgba(170,120,70,0.32)", face: "rgba(255,255,255,0.14)", ring: "rgba(255,255,255,0.55)", line: 0.8, heading: "rose", readouts: "chips" },
-  { ...base, id: "mono", ko: "모노 라인", en: "Mono line", layout: "corners", fg: "rgba(255,255,255,0.95)", accent: "#fff", north: "#fff", outline: "rgba(0,0,0,0.55)", weight: 500, sky: null, ground: null, face: null, ring: "rgba(255,255,255,0.8)", line: 0.8, heading: "tape", readouts: "line", labels: false },
-  { ...base, id: "fighter", ko: "전투기 HUD", en: "Fighter HUD", layout: "fighter", fg: "#5dff7a", accent: "#5dff7a", north: "#5dff7a", outline: null, glow: 6, font: MONO, sky: null, ground: null, face: null, ring: "#5dff7a", heading: "tape", readouts: "line" },
-  { ...base, id: "amber", ko: "앰버 계기", en: "Amber avionics", layout: "bottom", fg: "#ffb43a", accent: "#ffe08a", north: "#ff6b3a", outline: "rgba(0,0,0,0.7)", glow: 3, font: MONO, sky: null, ground: null, face: "rgba(10,8,4,0.5)", ring: "#ffb43a", heading: "rose", readouts: "line" },
-  { ...base, id: "racing", ko: "레이싱", en: "Racing", layout: "racing", fg: "#fff", accent: "#ff3b3b", north: "#ff3b3b", weight: 800, italic: true, sky: "rgba(30,110,230,0.85)", ground: "rgba(140,80,30,0.85)", face: "rgba(10,10,14,0.7)", ring: "#ff3b3b", line: 1.2, heading: "tape", readouts: "big", labels: false },
-  { ...base, id: "cinema", ko: "시네마 미니멀", en: "Cinema minimal", layout: "compact", fg: "#fff", accent: "#fff", north: "#fff", outline: "rgba(0,0,0,0.35)", weight: 400, sky: "rgba(255,255,255,0.1)", ground: "rgba(0,0,0,0.25)", face: "rgba(0,0,0,0.25)", ring: "rgba(255,255,255,0.5)", line: 0.6, heading: "rose", readouts: "line", labels: false, alpha: 0.85 },
-  { ...base, id: "pfd", ko: "글래스 콕핏", en: "Glass cockpit", layout: "center", fg: "#fff", accent: "#ffd23f", north: "#ff4fd8", sky: "rgba(42,125,225,0.9)", ground: "rgba(138,90,43,0.9)", face: "rgba(8,10,14,0.78)", ring: "rgba(255,255,255,0.9)", heading: "tape", readouts: "chips" },
-  { ...base, id: "neon", ko: "네온", en: "Neon", layout: "bottom", fg: "#ff4fd8", accent: "#37f3ff", north: "#37f3ff", outline: null, glow: 10, sky: null, ground: null, face: "rgba(20,0,40,0.35)", ring: "#37f3ff", heading: "rose", readouts: "chips" },
-  { ...base, id: "contrast", ko: "고대비", en: "High contrast", layout: "bottom", fg: "#ffe600", accent: "#ffe600", north: "#fff", outline: "#000", weight: 800, sky: "rgba(0,0,0,0.8)", ground: "rgba(70,60,0,0.85)", face: "rgba(0,0,0,0.8)", ring: "#ffe600", line: 1.5, heading: "rose", readouts: "chips" },
+  { ...base, id: "classic", layout: "bottom", fg: "#fff", accent: "#ffd23f", sky: "rgba(46,116,204,0.82)", ground: "rgba(122,78,38,0.82)", face: "rgba(15,18,24,0.62)", heading: "rose", readouts: "line" },
+  { ...base, id: "glass", layout: "bottom", fg: "#fff", accent: "#7fe3ff", outline: "rgba(0,0,0,0.45)", weight: 500, sky: "rgba(110,170,255,0.32)", ground: "rgba(170,120,70,0.32)", face: "rgba(255,255,255,0.14)", ring: "rgba(255,255,255,0.55)", line: 0.8, heading: "rose", readouts: "chips" },
+  { ...base, id: "mono", layout: "corners", fg: "rgba(255,255,255,0.95)", accent: "#fff", north: "#fff", outline: "rgba(0,0,0,0.55)", weight: 500, sky: null, ground: null, face: null, ring: "rgba(255,255,255,0.8)", line: 0.8, heading: "tape", readouts: "line", labels: false },
+  { ...base, id: "fighter", layout: "fighter", fg: "#5dff7a", accent: "#5dff7a", north: "#5dff7a", outline: null, glow: 6, font: MONO, sky: null, ground: null, face: null, ring: "#5dff7a", heading: "tape", readouts: "line" },
+  { ...base, id: "amber", layout: "bottom", fg: "#ffb43a", accent: "#ffe08a", north: "#ff6b3a", outline: "rgba(0,0,0,0.7)", glow: 3, font: MONO, sky: null, ground: null, face: "rgba(10,8,4,0.5)", ring: "#ffb43a", heading: "rose", readouts: "line" },
+  { ...base, id: "racing", layout: "racing", fg: "#fff", accent: "#ff3b3b", north: "#ff3b3b", weight: 800, italic: true, sky: "rgba(30,110,230,0.85)", ground: "rgba(140,80,30,0.85)", face: "rgba(10,10,14,0.7)", ring: "#ff3b3b", line: 1.2, heading: "tape", readouts: "big", labels: false },
+  { ...base, id: "cinema", layout: "compact", fg: "#fff", accent: "#fff", north: "#fff", outline: "rgba(0,0,0,0.35)", weight: 400, sky: "rgba(255,255,255,0.1)", ground: "rgba(0,0,0,0.25)", face: "rgba(0,0,0,0.25)", ring: "rgba(255,255,255,0.5)", line: 0.6, heading: "rose", readouts: "line", labels: false, alpha: 0.85 },
+  { ...base, id: "pfd", layout: "center", fg: "#fff", accent: "#ffd23f", north: "#ff4fd8", sky: "rgba(42,125,225,0.9)", ground: "rgba(138,90,43,0.9)", face: "rgba(8,10,14,0.78)", ring: "rgba(255,255,255,0.9)", heading: "tape", readouts: "chips" },
+  { ...base, id: "neon", layout: "bottom", fg: "#ff4fd8", accent: "#37f3ff", north: "#37f3ff", outline: null, glow: 10, sky: null, ground: null, face: "rgba(20,0,40,0.35)", ring: "#37f3ff", heading: "rose", readouts: "chips" },
+  { ...base, id: "contrast", layout: "bottom", fg: "#ffe600", accent: "#ffe600", north: "#fff", outline: "#000", weight: 800, sky: "rgba(0,0,0,0.8)", ground: "rgba(70,60,0,0.85)", face: "rgba(0,0,0,0.8)", ring: "#ffe600", line: 1.5, heading: "rose", readouts: "chips" },
   // 추가 5종
-  { ...base, id: "tactical", ko: "택티컬", en: "Tactical", layout: "corners", fg: "#d9e6c4", accent: "#ff9f1c", north: "#ff9f1c", outline: "rgba(0,0,0,0.6)", font: MONO, weight: 600, sky: "rgba(70,88,60,0.55)", ground: "rgba(60,48,30,0.6)", face: "rgba(18,24,14,0.6)", ring: "#8fa66b", line: 1, heading: "tape", readouts: "chips" },
-  { ...base, id: "blueprint", ko: "블루프린트", en: "Blueprint", layout: "center", fg: "#d6ecff", accent: "#ffffff", north: "#7fd0ff", outline: null, glow: 2, font: MONO, weight: 500, sky: null, ground: null, face: "rgba(12,48,104,0.55)", ring: "#8cc8ff", line: 0.7, heading: "tape", readouts: "line" },
-  { ...base, id: "sunset", ko: "선셋", en: "Sunset", layout: "bottom", fg: "#ffe2c4", accent: "#ff7a59", north: "#ff7a59", outline: "rgba(40,8,20,0.6)", weight: 600, sky: "rgba(255,138,92,0.45)", ground: "rgba(92,34,70,0.55)", face: "rgba(48,14,36,0.45)", ring: "#ffb48f", line: 0.9, heading: "rose", readouts: "chips" },
-  { ...base, id: "paper", ko: "화이트 카드", en: "White card", layout: "data", fg: "#14171c", accent: "#2f6bff", north: "#e5484d", outline: null, weight: 650, sky: "rgba(120,170,240,0.95)", ground: "rgba(196,160,118,0.95)", face: "rgba(255,255,255,0.88)", ring: "rgba(255,255,255,0.95)", line: 0.9, heading: "rose", readouts: "chips" },
-  { ...base, id: "sport", ko: "스포츠", en: "Sport", layout: "minimal", fg: "#fff", accent: "#00e0a4", north: "#00e0a4", outline: "rgba(0,0,0,0.5)", weight: 800, italic: true, sky: null, ground: null, face: null, ring: "#00e0a4", line: 1.1, heading: "tape", readouts: "big", labels: false },
+  { ...base, id: "tactical", layout: "corners", fg: "#d9e6c4", accent: "#ff9f1c", north: "#ff9f1c", outline: "rgba(0,0,0,0.6)", font: MONO, weight: 600, sky: "rgba(70,88,60,0.55)", ground: "rgba(60,48,30,0.6)", face: "rgba(18,24,14,0.6)", ring: "#8fa66b", line: 1, heading: "tape", readouts: "chips" },
+  { ...base, id: "blueprint", layout: "center", fg: "#d6ecff", accent: "#ffffff", north: "#7fd0ff", outline: null, glow: 2, font: MONO, weight: 500, sky: null, ground: null, face: "rgba(12,48,104,0.55)", ring: "#8cc8ff", line: 0.7, heading: "tape", readouts: "line" },
+  { ...base, id: "sunset", layout: "bottom", fg: "#ffe2c4", accent: "#ff7a59", north: "#ff7a59", outline: "rgba(40,8,20,0.6)", weight: 600, sky: "rgba(255,138,92,0.45)", ground: "rgba(92,34,70,0.55)", face: "rgba(48,14,36,0.45)", ring: "#ffb48f", line: 0.9, heading: "rose", readouts: "chips" },
+  { ...base, id: "paper", layout: "data", fg: "#14171c", accent: "#2f6bff", north: "#e5484d", outline: null, weight: 650, sky: "rgba(120,170,240,0.95)", ground: "rgba(196,160,118,0.95)", face: "rgba(255,255,255,0.88)", ring: "rgba(255,255,255,0.95)", line: 0.9, heading: "rose", readouts: "chips" },
+  { ...base, id: "sport", layout: "minimal", fg: "#fff", accent: "#00e0a4", north: "#00e0a4", outline: "rgba(0,0,0,0.5)", weight: 800, italic: true, sky: null, ground: null, face: null, ring: "#00e0a4", line: 1.1, heading: "tape", readouts: "big", labels: false },
 ];
 export const themeOf = (L?: Pick<Layout, "style">, id?: string) => THEMES.find((t) => t.id === (id ?? L?.style)) ?? THEMES[0];
 
