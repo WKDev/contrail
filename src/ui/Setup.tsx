@@ -190,7 +190,7 @@ export function Setup({ modal = false }: { modal?: boolean }) {
       )}
       <div class="welcome-actions">
         {modal && <button class="soft-btn" onClick={() => app.setShowSetup(false)}>{t("proj.back")}</button>}
-        <button class="clay-btn" onClick={start} disabled={!project || needAccess || busy || !!app.job}>
+        <button class="clay-btn" onClick={start} disabled={!project || needAccess || busy || app.busy}>
           {busy ? <Spinner size={18} /> : <Check size={18} strokeWidth={2.2} />} {modal ? t("setup.apply") : t("setup.start")}
         </button>
       </div>

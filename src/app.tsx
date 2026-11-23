@@ -8,7 +8,7 @@ import { grayFrame } from "./media.ts";
 import { continuity } from "./sim.ts";
 import { DEFAULT_SETTINGS, defaultTitle, pairKey, type Settings } from "./plan.ts";
 import {
-  defaultPrefs, emptyState, ensurePermission, exists, flushState, loadProject, readState, saveProject, telemetryFile, writeState,
+  defaultPrefs, emptyState, ensurePermission, exists, flushState, loadProject, mergeRecord, readState, saveProject, telemetryFile, writeState,
   layoutOf, linksOf, type FlightPrefs, type GogglesLink, type Layout, type SavedProject, type State, type VideoRecord,
 } from "./store.ts";
 import { buildLibrary, flightTitle, mediaInfo, proxyRef, scanIndex, type Dirs, type Flight, type Index, type Library } from "./library.ts";
@@ -95,6 +95,7 @@ export interface AppCtx {
   select: (id: string | null) => void;
   job: Job | null;
   batch: { step: StepKey; i: number; n: number; label: string } | null;
+  busy: boolean; // 진행 카드가 떠 있거나 일괄 처리 중 → 다른 작업 버튼 비활성
   stepsOf: (f: Flight) => Steps;
   stepTodo: () => StepTodo;
   runStep: (step: StepKey | "all") => Promise<void>;
@@ -168,6 +169,8 @@ export function App() {
   const idxRef = useRef<Index | null>(null);
   idxRef.current = idx;
 
+  // 작업 중(진행 카드·일괄 처리·중단 가능한 작업)이면 새 작업을 받지 않는다
+  const isBusy = () => !!abortRef.current || !!job || !!batch;
   const say = (msg: string, err = false) => {
     if (err) console.error(msg);
     setLog((l) => [{ t: Date.now(), msg, err }, ...l].slice(0, 300));
@@ -206,7 +209,7 @@ export function App() {
 
   // 작업 중: 화면 꺼짐(절전) 막기 + 페이지 닫기 전에 경고
   useEffect(() => {
-    if (!job) return;
+    if (!job && !batch) return;
     let lock: any = null;
     let alive = true;
     const acquire = () =>
@@ -225,7 +228,7 @@ export function App() {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("beforeunload", onLeave);
     };
-  }, [!!job]);
+  }, [!!job || !!batch]);
 
   // ---------- 스캔 ----------
   // reload: 폴더를 새로 열 때만 상태 파일을 디스크에서 읽는다. 그 외에는 메모리 상태가 최신
@@ -288,6 +291,7 @@ export function App() {
 
   // 프로젝트 열기: 하위 폴더 이름으로 역할을 추정하고, 사용자가 바꾼 칸(picks)을 덮어쓴다. 새 결과 폴더는 여기서 만든다
   async function openProject(project: FileSystemDirectoryHandle, picks: RolePicks) {
+    if (isBusy()) return;
     try {
       if (!(await ensurePermission(project))) return say(t("err.permission"), true);
       for (const [role, h] of Object.entries(picks) as [Role, FileSystemDirectoryHandle | null][]) {
@@ -478,11 +482,14 @@ export function App() {
       clipDurations: f.clips.map((c) => c.duration), joinReasons: f.joins.map((j) => j.reason), youtubeId: f.youtubeId,
     };
     const name = `${f.id}_merged.MP4`;
+    const tmp = `${name}.part`;
     const out = d.droneMerged;
-    if (await exists(out, name)) await out.removeEntry(name); // 이전에 중단된 결과물
+    // 기록 없는 같은 이름 병합본은 사용자가 둔 파일일 수 있으니 덮어쓰지 않는다
+    if ((await exists(out, name)) && !stateRef.current.videos[name]) throw new Error(t("err.orphan", { name }));
+    await out.removeEntry(tmp).catch(() => {});
     const total = files.reduce((a, x) => a + x.size, 0);
     setJob({ flightId: f.id, phase: "merge", done: 0, total, started: Date.now() });
-    const w = await (await out.getFileHandle(name, { create: true })).createWritable();
+    const w = await (await out.getFileHandle(tmp, { create: true })).createWritable();
     try {
       await merge(files.map(fileReader), {
         write: async (c) => {
@@ -493,14 +500,19 @@ export function App() {
       await w.close();
     } catch (e) {
       await w.abort().catch(() => {});
-      await out.removeEntry(name).catch(() => {});
+      await out.removeEntry(tmp).catch(() => {});
       throw e;
     }
-    // 검증: 결과의 프레임 수 = 원본 합
+    // 검증: 결과의 프레임 수 = 원본 합. 통과해야 임시 파일을 결과 이름으로 바꾼다
     setJob({ flightId: f.id, phase: "verify", done: 0, total: 1, started: Date.now() });
-    const tr = await parse(fileReader(await (await out.getFileHandle(name)).getFile()));
+    const tr = await parse(fileReader(await (await out.getFileHandle(tmp)).getFile()));
     const verified = { frames: tr.count, sourceFrames, duration: tr.duration };
-    if (tr.count !== sourceFrames) throw new Error(t("verify.fail", { a: tr.count, b: sourceFrames }));
+    if (tr.count !== sourceFrames) {
+      await out.removeEntry(tmp).catch(() => {});
+      throw new Error(t("verify.fail", { a: tr.count, b: sourceFrames }));
+    }
+    await out.removeEntry(name).catch(() => {});
+    await renameFile(out, tmp, name);
     try {
       const tels = await Promise.all(files.map((x) => readTelemetry(fileReader(x))));
       const w2 = await (await out.getFileHandle(telemetryFile(name), { create: true })).createWritable();
@@ -634,7 +646,7 @@ export function App() {
     if (step === "drone") {
       if (f.status !== "pending") return out;
       const r = await doMerge(f, signal);
-      update((s) => (s.videos[r.name] = r.rec));
+      update((s) => (s.videos[r.name] = mergeRecord(s.videos[r.name], r.rec)));
       say(t("toast.merged", { name: title }));
       return r;
     }
@@ -642,7 +654,10 @@ export function App() {
     const rec = out?.rec ?? f.record;
     if (step === "goggles") {
       const g = gogglesOf(f);
-      if (g.candidates.length) await syncCore(f, g.candidates, signal);
+      if (g.candidates.length) {
+        setJob({ flightId: f.id, phase: "goggles", done: 0, total: g.candidates.length * 2, started: Date.now() });
+        await syncCore(f, g.candidates, signal, (k) => setJob((j) => j && { ...j, done: k }));
+      }
       // 고글 병합은 드론 쪽 결과(기록)가 있어야 함: 병합 대기 비행은 맞춤만
       if (rec && f.status !== "pending" && gogglesMergeNeeded(f) && (await doGogglesMerge(f, rec.sources, rec, signal))) say(t("toast.gmerged", { name: title }));
       return out;
@@ -661,7 +676,7 @@ export function App() {
 
   // 비행 하나 (프로젝트 화면의 버튼): 병합 → (고글 병합) → HUD
   async function run(f: Flight, what: { merge: boolean; overlay: boolean; goggles?: boolean }) {
-    if (!dirsRef.current || job) return;
+    if (!dirsRef.current || isBusy()) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -687,7 +702,7 @@ export function App() {
   // 단계별 일괄: 대상 비행을 시간순으로 하나씩. 하나가 실패해도 다음 비행은 계속, 중단하면 거기서 멈춤.
   // "all" = ① 전체 → ② 전체 → ③ 전체 (단계 사이에 다시 읽어서 앞 단계 결과를 반영)
   async function runStep(step: StepKey | "all") {
-    if (!dirsRef.current || job) return;
+    if (!dirsRef.current || isBusy()) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let ok = 0, failed = 0, blocked = 0;
@@ -711,7 +726,6 @@ export function App() {
             else failed++;
           }
         }
-        setJob(null);
         current = (await scan(dirsRef.current, true)) ?? current;
       }
     } finally {
@@ -754,7 +768,7 @@ export function App() {
   }
 
   async function syncGogglesFor(f: Flight, list: GogglesInfo[]) {
-    if (!idx || job || !list.length) return;
+    if (!idx || isBusy() || !list.length) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setJob({ flightId: f.id, phase: "goggles", done: 0, total: list.length * 2, started: Date.now() });
@@ -797,7 +811,7 @@ export function App() {
   // 고글 녹화 가져오기. from = "folder": SD 카드(또는 DCIM) 폴더를 고르면 비행과 시간이 겹치는 녹화만 골라 복사
   async function addGoggles(from: "folder" | "files" = "folder") {
     const d = dirsRef.current;
-    if (!d || job) return;
+    if (!d || isBusy()) return;
     // 복사할 곳 = 고글 원본 폴더 (이때만 쓰기 권한). 없으면 프로젝트에 goggles_raw 를 만들어 고글 원본으로 정함
     let target = d.gogglesRaw;
     if (target && !(await ensurePermission(target).catch(() => false))) return say(t("err.permission"), true);
@@ -937,7 +951,7 @@ export function App() {
   }
 
   async function ytUpload(items: { flight: Flight; overlay: boolean }[]) {
-    if (!dirsRef.current || job) return;
+    if (!dirsRef.current || isBusy()) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -1003,7 +1017,7 @@ export function App() {
   const ctx: AppCtx = {
     config, saveConfig, dirs, savedProject, logOf, idx, lib, state, view, setView, day, setDay, query, setQuery, sortNew, setSortNew,
     selected, select: setSelectedId, job, log, loading, account, showSettings, setShowSettings, showSetup, setShowSetup,
-    batch, stepsOf, stepTodo: () => todoOf(lib), runStep, openProject, pickDir, setRole, reconnect,
+    batch, busy: !!job || !!batch, stepsOf, stepTodo: () => todoOf(lib), runStep, openProject, pickDir, setRole, reconnect,
     refresh: async () => void (await scan(dirsRef.current, false, true)), setOverride, prefsOf, setPrefs, run, cancel: () => abortRef.current?.abort(),
     thumb: (stem) => thumbs[stem], seam, telemetryOf, previewFile, gogglesOf, gogglesMergeNeeded, setGogglesView, syncGogglesFor, nudgeGoggles, unlinkGoggles, addGoggles,
     layout: layoutOf(state), setLayout,

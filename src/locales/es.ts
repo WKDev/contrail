@@ -209,6 +209,8 @@ export const es: Record<I18nKey, string> = {
   "step.run": "Run",
   "step.all": "Run all in order",
   "step.hudBlocked": "{n} need merging first",
+  "err.orphan": "{name} already exists without a record, so it wasn't overwritten. Check it, move or delete it, then run again.",
+  "step.orphans": "{n} unrecorded merged file(s) with a frame mismatch, skipped",
   "flight.missing": "File missing",
   "lay.edit": "Editar diseño del HUD · OSD de las gafas",
   "lay.title": "Diseño",

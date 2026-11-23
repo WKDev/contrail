@@ -15,7 +15,7 @@ export function StepBar() {
   const app = useApp();
   const todo = useMemo(() => app.stepTodo(), [app.lib, app.state.prefs, app.state.goggles, app.idx]);
   if (!app.lib?.flights.length) return null;
-  const busy = !!app.job;
+  const busy = app.busy;
   const total = todo.drone.length + todo.goggles.length + todo.hud.length;
   return (
     <nav class="stepbar glass" aria-label={t("a11y.pipeline")}>
@@ -29,6 +29,7 @@ export function StepBar() {
               <span class="stepbar-label">{s.icon} {s.n} {t(`step.${s.key}`)}</span>
               {n ? <span class="num">{n}</span> : <Check size={14} strokeWidth={2.6} />}
               <button class="soft-btn sm" disabled={!n || busy} onClick={() => app.runStep(s.key)}>{t("step.run")}</button>
+              {s.key === "drone" && todo.orphans > 0 && <span class="small stepbar-note warn-text">{t("step.orphans", { n: todo.orphans })}</span>}
               {s.key === "hud" && todo.hudBlocked > 0 && <span class="small muted stepbar-note">{t("step.hudBlocked", { n: todo.hudBlocked })}</span>}
             </div>
           </Fragment>

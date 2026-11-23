@@ -209,6 +209,8 @@ export const zh: Record<I18nKey, string> = {
   "step.run": "Run",
   "step.all": "Run all in order",
   "step.hudBlocked": "{n} need merging first",
+  "err.orphan": "{name} already exists without a record, so it wasn't overwritten. Check it, move or delete it, then run again.",
+  "step.orphans": "{n} unrecorded merged file(s) with a frame mismatch, skipped",
   "flight.missing": "File missing",
   "lay.edit": "编辑 HUD · 眼镜 OSD 布局",
   "lay.title": "布局",

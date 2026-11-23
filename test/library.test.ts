@@ -160,3 +160,54 @@ test("HUD·고글 병합본은 해당 폴더에서 찾는다", async () => {
   assert.equal(l.flights[0].overlay?.ref?.dir, "hud");
   assert.equal(l.flights[0].gogglesOut?.ref?.dir, "gmerged");
 });
+
+// ---- 최종 리뷰 수정 ----
+test("예전 3_uploaded 의 병합본 + _sources 원본 = 완료", async () => {
+  const project = fakeDir("old");
+  const ready = fakeDir("2_ready");
+  const d: Dirs = {
+    project, droneRaw: project, gogglesRaw: null, gogglesExtra: null, droneMerged: ready, gogglesMerged: ready, hud: ready, logs: null,
+    legacy: [fakeDir("_sources", { [`${A}.MP4`]: 7, [`${B}.MP4`]: 7 }), fakeDir("3_uploaded", { [`${A}_merged.MP4`]: 18 })], excluded: null,
+  };
+  const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { youtubeId: "yt" }) }));
+  assert.equal(l.flights.length, 1);
+  assert.equal(l.flights[0].status, "done");
+  assert.ok(!l.flights[0].missing);
+  assert.equal(l.flights[0].youtubeId, "yt");
+});
+
+test("결과 파일이 없고 원본이 _sources 에만 있으면 missing (사라지지 않음)", async () => {
+  const project = fakeDir("old");
+  const d: Dirs = {
+    project, droneRaw: project, gogglesRaw: null, gogglesExtra: null, droneMerged: fakeDir("2_ready"), gogglesMerged: fakeDir("2_ready"), hud: fakeDir("2_ready"), logs: null,
+    legacy: [fakeDir("_sources", { [`${A}.MP4`]: 7, [`${B}.MP4`]: 7 })], excluded: null,
+  };
+  const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { youtubeId: "yt" }) }));
+  assert.equal(l.flights.length, 1);
+  assert.equal(l.flights[0].missing, true);
+});
+
+test("병합본 폴더를 드론 원본과 같은 폴더로 골라도 완료로 본다", async () => {
+  const same = fakeDir("aircraft_raw", { [`${A}.MP4`]: 9, [`${B}.MP4`]: 9, [`${A}_merged.MP4`]: 18 });
+  const d: Dirs = { ...dirs({}), droneRaw: same, droneMerged: same };
+  const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`]) }));
+  assert.equal(l.flights.length, 1);
+  assert.equal(l.flights[0].status, "done");
+});
+
+test("장면 분석 전인 이웃 클립은 analyzing", async () => {
+  const C = "DJI_20261028130230_0001_D", D = "DJI_20261028130331_0002_D"; // 60초 클립, 1초 간격, 자동분할 아님
+  const l = await lib(dirs({ raw: { [`${C}.MP4`]: 5, [`${D}.MP4`]: 5 } }), emptyState());
+  assert.equal(l.flights.length, 2);
+  assert.ok(l.flights.every((f) => f.analyzing));
+  const scored = await lib(dirs({ raw: { [`${C}.MP4`]: 5, [`${D}.MP4`]: 5 } }), { ...emptyState(), scores: { [`${C}>${D}`]: 0.9 } });
+  assert.ok(scored.flights.every((f) => !f.analyzing));
+});
+
+test("프레임 수가 안 맞는 기록 없는 병합본은 orphan 으로 표시", async () => {
+  meta[`${A}_merged.MP4`] = { duration: 490, frames: 299 };
+  const l = await lib(dirs({ raw: { [`${A}.MP4`]: 9, [`${B}.MP4`]: 9 }, merged: { [`${A}_merged.MP4`]: 18 } }), emptyState());
+  assert.equal(l.flights[0].status, "pending");
+  assert.equal(l.flights[0].orphan, `${A}_merged.MP4`);
+  delete meta[`${A}_merged.MP4`];
+});

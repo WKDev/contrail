@@ -148,7 +148,7 @@ function Sidebar() {
       <div class="sidebar-foot">
         <FolderStatus />
         <div class="foot-row">
-          <button class="ghost-btn" onClick={() => app.setShowSetup(true)} disabled={!!app.job}>{t("folder.change")}</button>
+          <button class="ghost-btn" onClick={() => app.setShowSetup(true)} disabled={app.busy}>{t("folder.change")}</button>
           <button class="icon-btn" onClick={() => app.setShowSettings(true)} title={t("nav.settings")} aria-label={t("nav.settings")}>
             <SettingsIcon size={17} strokeWidth={1.75} />
           </button>
@@ -192,7 +192,7 @@ function FolderStatus() {
               {missing ? <TriangleAlert size={15} strokeWidth={1.75} /> : ROLE_ICON[r]}
               <span class="grow">{t(`role.${r}` as any)}{extra(r)}</span>
               <b class="mono" title={h?.name}>{h ? h.name : t("role.none")}</b>
-              {missing && <button class="soft-btn sm" onClick={() => app.reconnect(r)} disabled={!!app.job}>{t("gfolder.reconnect")}</button>}
+              {missing && <button class="soft-btn sm" onClick={() => app.reconnect(r)} disabled={app.busy}>{t("gfolder.reconnect")}</button>}
             </li>
           );
         })}

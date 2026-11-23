@@ -21,20 +21,22 @@ export function stepsOf(f: Flight, g: GogglesFacts, p: FlightPrefs): Steps {
   const drone: DroneStep = f.status === "pending" ? "todo" : f.clips.length > 1 ? "done" : "na";
   const merged = g.mergedSources?.join() === g.linked.join();
   const goggles: GogglesStep =
-    g.candidates > 0 ? "sync"
+    f.missing ? "none"
+    : g.candidates > 0 ? "sync"
     : g.linked.length === 0 ? "none"
     : g.linked.length === 1 || drone === "todo" ? "linked"
     : merged ? "done"
     : "merge";
   const wants = p.instruments || p.map || (p.goggles && g.linked.length > 0);
-  const hud: HudStep = f.overlay ? "done" : !wants || f.missing ? "off" : drone === "todo" ? "blocked" : "todo";
+  const hud: HudStep = f.overlay ? "done" : !wants || f.missing ? "off" : drone === "todo" || f.analyzing ? "blocked" : "todo";
   return { drone, goggles, hud };
 }
 
 export function stepTodo(list: { f: Flight; s: Steps }[]) {
   const sorted = [...list].sort((a, b) => a.f.start - b.f.start);
   return {
-    drone: sorted.filter((x) => x.s.drone === "todo").map((x) => x.f),
+    drone: sorted.filter((x) => x.s.drone === "todo" && !x.f.orphan).map((x) => x.f),
+    orphans: sorted.filter((x) => x.f.orphan).length,
     goggles: sorted.filter((x) => x.s.goggles === "sync" || x.s.goggles === "merge").map((x) => x.f),
     hud: sorted.filter((x) => x.s.hud === "todo").map((x) => x.f),
     hudBlocked: sorted.filter((x) => x.s.hud === "blocked").length,

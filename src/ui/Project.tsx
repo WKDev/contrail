@@ -298,7 +298,7 @@ function RunBar({ f, job, canOverlay }: { f: Flight; job: Job | null; canOverlay
       </div>
     );
   }
-  const busy = !!app.job;
+  const busy = app.busy;
   if (f.status === "pending") {
     return (
       <div class="runbar">
@@ -757,14 +757,14 @@ function GogglesPanel({ f, job }: { f: Flight; job: Job | null }) {
           {candidates.length ? (
             <>
               <span>{t("gog.candidate", { name: candidates.map((c) => c.name).join(", ") })}</span>
-              <button class="soft-btn sm" onClick={() => app.syncGogglesFor(f, candidates)} disabled={!!app.job}>{t("gog.sync")}</button>
+              <button class="soft-btn sm" onClick={() => app.syncGogglesFor(f, candidates)} disabled={app.busy}>{t("gog.sync")}</button>
             </>
           ) : (
             <>
               <span><b>{t("gog.none")}</b><br /><small>{app.dirs?.gogglesRaw ? t("gog.noneInFolder", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}</small></span>
               <div class="gog-add">
-                {!app.dirs?.gogglesRaw && <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
-                <button class="text-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}>{t("gog.fromFiles")}</button>
+                {!app.dirs?.gogglesRaw && <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
+                <button class="text-btn" onClick={() => app.addGoggles("files")} disabled={app.busy}>{t("gog.fromFiles")}</button>
               </div>
             </>
           )}
@@ -785,7 +785,7 @@ function LogSummary({ f }: { f: Flight }) {
         <section class="logsum neu-inset empty">
           <ScrollText size={16} strokeWidth={1.75} />
           <span class="grow small">{t("flog.noneHint")}</span>
-          <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={14} /> {t("flog.pick")}</button>
+          <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={14} /> {t("flog.pick")}</button>
         </section>
       );
     return <p class="note"><ScrollText size={14} strokeWidth={2} /> {t("flog.noMatch")}</p>;
@@ -834,13 +834,13 @@ function YoutubeRow({ f }: { f: Flight }) {
         {f.youtubeId ? (
           <a class="chip done" href={`https://youtu.be/${f.youtubeId}`} target="_blank" rel="noreferrer">{t("up.original")} <ExternalLink size={12} strokeWidth={2} /></a>
         ) : (
-          <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")} {t("up.one")}</button>
+          <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")} {t("up.one")}</button>
         )}
         {f.overlay &&
           (f.overlayYoutubeId ? (
             <a class="chip done" href={`https://youtu.be/${f.overlayYoutubeId}`} target="_blank" rel="noreferrer">{t("up.overlay")} <ExternalLink size={12} strokeWidth={2} /></a>
           ) : (
-            <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")} {t("up.one")}</button>
+            <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")} {t("up.one")}</button>
           ))}
       </div>
     </section>
@@ -913,7 +913,7 @@ function GogglesMergeRow({ f, job }: { f: Flight; job: Job | null }) {
       ) : (
         <div class="row">
           <span class="note grow">{t("gm.todo", { n: segs.length })}</span>
-          <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.run(f, { merge: false, overlay: false, goggles: true })}>
+          <button class="soft-btn sm" disabled={app.busy} onClick={() => app.run(f, { merge: false, overlay: false, goggles: true })}>
             <Merge size={14} /> {t("gm.run")}
           </button>
         </div>

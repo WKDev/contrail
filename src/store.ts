@@ -104,6 +104,12 @@ export interface State {
   quota: { day: string; used: number };
 }
 
+// 같은 결과 이름으로 다시 만들 때: 새 내용 + 이전 업로드 기록(YouTube·재생목록·시각)은 유지
+export function mergeRecord(prev: VideoRecord | undefined, next: VideoRecord): VideoRecord {
+  if (!prev) return next;
+  return { ...next, youtubeId: next.youtubeId ?? prev.youtubeId, playlistId: next.playlistId ?? prev.playlistId, uploadedAt: next.uploadedAt ?? prev.uploadedAt };
+}
+
 export const emptyState = (): State => ({ version: 1, overrides: {}, scores: {}, videos: {}, quota: { day: "", used: 0 } });
 
 export async function readState(root: FileSystemDirectoryHandle): Promise<State> {

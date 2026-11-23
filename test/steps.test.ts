@@ -65,3 +65,16 @@ test("isPendingView: 어느 단계든 할 일이 있으면 true", () => {
   assert.equal(isPendingView({ drone: "done", goggles: "linked", hud: "todo" }), true);
   assert.equal(isPendingView({ drone: "done", goggles: "linked", hud: "off" }), false);
 });
+
+test("분석 중인 비행은 HUD blocked, orphan 은 드론 병합 대상에서 빠짐", () => {
+  const a = flight("a", 0, { analyzing: true });
+  assert.equal(stepsOf(a, none, p).hud, "blocked");
+  const b = { ...pending2("b"), orphan: "b_merged.MP4" };
+  const todo = stepTodo([{ f: b, s: stepsOf(b, none, p) }]);
+  assert.equal(todo.drone.length, 0);
+  assert.equal(todo.orphans, 1);
+});
+
+test("missing 비행은 고글 단계도 none", () => {
+  assert.equal(stepsOf(flight("a", 0, { missing: true }), { linked: [], candidates: 2 }, p).goggles, "none");
+});

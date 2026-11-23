@@ -35,9 +35,9 @@ export function GogglesView() {
   return (
     <>
       <ViewHead title={t("nav.goggles")} hint={app.dirs?.gogglesRaw ? t("gog.viewHintLinked", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}>
-        <button class="soft-btn" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={15} /> {app.dirs?.gogglesRaw ? t("gfolder.change") : t("gfolder.pick")}</button>
-        <button class="soft-btn" onClick={() => app.addGoggles("folder")} disabled={!!app.job} title={t("gog.fromSdHint")}><Glasses size={15} /> {t("gog.fromSd")}</button>
-        <button class="soft-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}><Plus size={15} /> {t("gog.fromFiles")}</button>
+        <button class="soft-btn" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={15} /> {app.dirs?.gogglesRaw ? t("gfolder.change") : t("gfolder.pick")}</button>
+        <button class="soft-btn" onClick={() => app.addGoggles("folder")} disabled={app.busy} title={t("gog.fromSdHint")}><Glasses size={15} /> {t("gog.fromSd")}</button>
+        <button class="soft-btn" onClick={() => app.addGoggles("files")} disabled={app.busy}><Plus size={15} /> {t("gog.fromFiles")}</button>
       </ViewHead>
       <div class="scroll">
         {!rows.length ? (
@@ -123,8 +123,8 @@ export function UploadView() {
     <>
       <ViewHead title={t("up.title")} hint={t("up.quota", { u: used.toLocaleString(), d: app.config.dailyQuota.toLocaleString(), n: Math.max(0, Math.floor(app.quotaLeft() / app.perUpload)) })}>
         {app.account ? <span class="chip done">{app.account}</span> : <button class="soft-btn" onClick={app.ytLogin}>{t("up.login")}</button>}
-        <button class="soft-btn" onClick={app.ytSync} disabled={!!app.job}><RefreshCw size={14} /> {t("up.sync")}</button>
-        <button class="soft-btn" onClick={() => app.ytUpload(queue)} disabled={!queue.length || !!app.job}><CloudUpload size={16} /> {t("up.queue")} ({queue.length})</button>
+        <button class="soft-btn" onClick={app.ytSync} disabled={app.busy}><RefreshCw size={14} /> {t("up.sync")}</button>
+        <button class="soft-btn" onClick={() => app.ytUpload(queue)} disabled={!queue.length || app.busy}><CloudUpload size={16} /> {t("up.queue")} ({queue.length})</button>
       </ViewHead>
       <div class="scroll">
         <ul class="plain-list">
@@ -138,13 +138,13 @@ export function UploadView() {
               {f.youtubeId ? (
                 <a class="chip done" href={`https://youtu.be/${f.youtubeId}`} target="_blank" rel="noreferrer">{t("up.original")} <ExternalLink size={12} strokeWidth={2} /></a>
               ) : f.output?.ref ? (
-                <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")}</button>
+                <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")}</button>
               ) : null}
               {f.overlay &&
                 (f.overlayYoutubeId ? (
                   <a class="chip done" href={`https://youtu.be/${f.overlayYoutubeId}`} target="_blank" rel="noreferrer">{t("up.overlay")} <ExternalLink size={12} strokeWidth={2} /></a>
                 ) : (
-                  <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")}</button>
+                  <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")}</button>
                 ))}
             </li>
           ))}

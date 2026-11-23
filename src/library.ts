@@ -138,6 +138,8 @@ export interface Flight {
   gogglesOut?: { name: string; ref?: FileRef; record: VideoRecord }; // 고글 녹화 병합본
   missing?: boolean; // 기록은 있는데 결과 파일도 원본 MP4 도 없음
   synthetic?: boolean; // 클립 하나짜리: 원본이 곧 결과, 기록은 아직 저장 전
+  analyzing?: boolean; // 이웃 클립과 같은 장면인지 아직 분석 전 → 묶음이 바뀔 수 있어 HUD 보류
+  orphan?: string; // 기록 없는 병합본이 있는데 프레임 수가 안 맞음 → 덮어쓰지 않고 드론 병합에서 제외
   youtubeId?: string;
   overlayYoutubeId?: string;
 }
@@ -158,13 +160,12 @@ const stemOf = (name: string) => name.replace(/\.(mp4|lrf|srt)$/i, "");
 
 type Info = (f: File) => Promise<{ duration: number; frames: number }>;
 const RAW_DIRS: DirKey[] = ["raw", "excluded"]; // 병합 대기가 될 수 있는 원본 위치
-const ORIG_DIRS: DirKey[] = ["raw", "excluded", "legacy"]; // 원본을 찾는 위치
 
 export async function buildLibrary(idx: Index, st: State, s: Settings, info: Info = mediaInfo): Promise<Library> {
   const remote = st.remote ?? {};
   const overlays = Object.entries(st.videos).filter(([, v]) => v.variant === "hud");
   const gogOuts = Object.entries(st.videos).filter(([, v]) => v.variant === "goggles");
-  const isOrig = (n: string) => ORIG_DIRS.includes(idx.files.get(n)?.dir as DirKey);
+  const isPendable = (n: string) => RAW_DIRS.includes(idx.files.get(n)?.dir as DirKey);
   const flights: Flight[] = [];
   const adopt: Library["adopt"] = [];
 
@@ -193,9 +194,12 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
   const used = new Set<string>();
   for (const [name, rec] of Object.entries(st.videos)) {
     if (rec.variant) continue;
+    // 결과 파일 판정은 이름으로: 원본 이름(DJI_..._D.MP4)이 아닌 결과물은 어느 폴더에 있든 결과
+    // (예전 3_uploaded·병합본 폴더를 원본 폴더와 같게 고른 경우 포함). 원본 이름이면 클립 하나짜리 결과
     const ref = idx.files.get(name);
-    const present = !!ref && (!ORIG_DIRS.includes(ref.dir) || rec.sources.length === 1);
-    if (!present && rec.sources.every(isOrig)) continue;
+    const present = !!ref && (!RAW_RE.test(name) || rec.sources.length === 1);
+    // 결과가 없고 원본이 전부 병합 대기 위치에 있으면 대기로 돌림. _sources 에만 있으면 "파일 없음"으로 남김
+    if (!present && rec.sources.every(isPendable)) continue;
     rec.sources.forEach((x) => used.add(x));
     flights.push(await doneFlight(name, rec, present ? {} : { missing: true }));
   }
@@ -222,7 +226,13 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
     }
   });
   const idxOf = new Map(clips.map((c, i) => [c.name, i]));
+  // 장면 분석 전인 이음매의 양쪽 클립
+  const unsure = new Set<string>();
+  decisions.forEach((d, i) => {
+    if (i && d.mergeReason === "분석 필요") unsure.add(clips[i - 1].name).add(clips[i].name);
+  });
   for (const g of groupClips(clips, decisions)) {
+    const analyzing = g.some((c) => unsure.has(c.name)) || undefined;
     const joins: Join[] = g.slice(1).map((c) => {
       const d = decisions[idxOf.get(c.name)!];
       return { reason: d.overridden ? "manual" : d.mergeReason === "DJI 자동분할" ? "auto" : "scene", score: d.score, gap: d.gap };
@@ -234,13 +244,15 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
     };
     // 클립 하나 = 병합할 것 없음: 원본이 곧 결과
     if (g.length === 1) {
-      flights.push(await doneFlight(g[0].name, base, { synthetic: true }));
+      flights.push(await doneFlight(g[0].name, base, { synthetic: true, analyzing }));
       continue;
     }
     // 기록 없이 병합본만 있으면: 프레임 수가 원본 합과 같을 때만 받아들임 (다시 병합해 중복을 만들지 않게)
     const mergedName = `${g[0].stem}_merged.MP4`;
     const mref = idx.files.get(mergedName);
-    if (mref && !ORIG_DIRS.includes(mref.dir) && !st.videos[mergedName]) {
+    let orphan: string | undefined;
+    if (mref && !st.videos[mergedName]) {
+      orphan = mergedName;
       try {
         const out = await info(await mref.handle.getFile());
         let sum = 0;
@@ -255,7 +267,7 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
     }
     flights.push({
       id: g[0].stem, number: 0, day: dayKey(g[0].start), start: g[0].start, end: g[0].start + (g[g.length - 1].start - g[0].start) + g[g.length - 1].duration * 1000,
-      duration, size: g.reduce((a, c) => a + c.size, 0), clips: g, joins, status: "pending",
+      duration, size: g.reduce((a, c) => a + c.size, 0), clips: g, joins, status: "pending", analyzing, orphan,
       youtubeId: g.every((c) => remote[c.name] && remote[c.name] === remote[g[0].name]) ? remote[g[0].name] : undefined,
     });
   }
