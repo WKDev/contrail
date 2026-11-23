@@ -8,10 +8,12 @@ import { grayFrame } from "./media.ts";
 import { continuity } from "./sim.ts";
 import { DEFAULT_SETTINGS, defaultTitle, pairKey, type Settings } from "./plan.ts";
 import {
-  defaultPrefs, emptyState, ensurePermission, exists, flushState, loadGogglesDir, loadLogsDir, loadRoot, saveLogsDir, moveFile, saveGogglesDir, readState, saveRoot, telemetryFile, writeState,
-  layoutOf, linksOf, type FlightPrefs, type GogglesLink, type Layout, type State, type VideoRecord,
+  defaultPrefs, emptyState, ensurePermission, exists, flushState, loadProject, readState, saveProject, telemetryFile, writeState,
+  layoutOf, linksOf, type FlightPrefs, type GogglesLink, type Layout, type SavedProject, type State, type VideoRecord,
 } from "./store.ts";
-import { buildLibrary, flightTitle, mediaInfo, openDirs, proxyRef, scanIndex, type Dirs, type Flight, type Index, type Library } from "./library.ts";
+import { buildLibrary, flightTitle, mediaInfo, proxyRef, scanIndex, type Dirs, type Flight, type Index, type Library } from "./library.ts";
+import { guessFor, READONLY_ROLES, resolveDirs, type Role, type RolePicks } from "./roles.ts";
+import { stepsOf as computeSteps, stepTodo as computeTodo, type Steps } from "./steps.ts";
 import { concatTelemetry, fromJSON, readTelemetry, toJSON, type Telemetry } from "./telemetry.ts";
 import { renderOverlay } from "./render.ts";
 import { analyzeGoggles } from "./osdstat.ts";
@@ -69,15 +71,15 @@ export interface LogEntry {
   err?: boolean;
 }
 export type View = "all" | "pending" | "done" | "goggles" | "excluded" | "upload";
+export type StepKey = "drone" | "goggles" | "hud";
+export type StepTodo = ReturnType<typeof computeTodo>;
 
 export interface AppCtx {
   config: Config;
   saveConfig: (c: Config) => void;
   dirs: Dirs | null;
-  savedRoot: FileSystemDirectoryHandle | null;
-  savedGoggles: FileSystemDirectoryHandle | null;
+  savedProject: SavedProject | null;
   logOf: (f: Flight) => FlightLog | null;
-  linkLogsFolder: () => Promise<void>;
   idx: Index | null;
   lib: Library | null;
   state: State;
@@ -92,19 +94,21 @@ export interface AppCtx {
   selected: Flight | null;
   select: (id: string | null) => void;
   job: Job | null;
-  batch: { i: number; n: number; label: string } | null;
-  batchTodo: () => { f: Flight; overlay: boolean }[];
-  runAll: () => Promise<void>;
+  batch: { step: StepKey; i: number; n: number; label: string } | null;
+  stepsOf: (f: Flight) => Steps;
+  stepTodo: () => StepTodo;
+  runStep: (step: StepKey | "all") => Promise<void>;
   log: LogEntry[];
   loading: boolean;
   account: string | null;
   showSettings: boolean;
   setShowSettings: (b: boolean) => void;
-  openFolder: (h?: FileSystemDirectoryHandle, goggles?: FileSystemDirectoryHandle | null) => Promise<void>;
-  pickDir: (kind: "drone" | "goggles") => Promise<FileSystemDirectoryHandle | null>;
-  setGogglesFolder: (h: FileSystemDirectoryHandle | null) => Promise<void>;
-  reconnectGoggles: () => Promise<void>;
-  linkGogglesFolder: () => Promise<void>;
+  showSetup: boolean;
+  setShowSetup: (b: boolean) => void;
+  openProject: (project: FileSystemDirectoryHandle, picks: RolePicks) => Promise<void>;
+  pickDir: (role: Role | "project") => Promise<FileSystemDirectoryHandle | null>;
+  setRole: (role: Role, h: FileSystemDirectoryHandle | null) => Promise<void>;
+  reconnect: (role: Role) => Promise<void>;
   refresh: () => Promise<void>;
   setOverride: (name: string, key: "excluded" | "mergePrev", v: boolean | undefined) => void;
   prefsOf: (id: string) => FlightPrefs;
@@ -124,8 +128,6 @@ export interface AppCtx {
   layout: Layout;
   setLayout: (l: Layout | null) => void;
   addGoggles: (from?: "folder" | "files") => Promise<void>;
-  tidyExcluded: () => Promise<void>;
-  restoreExcluded: (name: string) => Promise<void>;
   ytLogin: () => Promise<void>;
   ytSync: () => Promise<void>;
   ytUpload: (items: { flight: Flight; overlay: boolean }[]) => Promise<void>;
@@ -140,10 +142,9 @@ export function App() {
   useLang();
   const [config, setConfigRaw] = useState(loadConfig);
   const [dirs, setDirs] = useState<Dirs | null>(null);
-  const [savedRoot, setSavedRoot] = useState<FileSystemDirectoryHandle | null>(null);
-  const [savedGoggles, setSavedGoggles] = useState<FileSystemDirectoryHandle | null>(null);
-  const [batch, setBatch] = useState<{ i: number; n: number; label: string } | null>(null);
-  const savedLogs = useRef<FileSystemDirectoryHandle | null>(null);
+  const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [batch, setBatch] = useState<AppCtx["batch"]>(null);
   const [idx, setIdx] = useState<Index | null>(null);
   const [lib, setLib] = useState<Library | null>(null);
   const [state, setStateRaw] = useState<State>(emptyState);
@@ -186,21 +187,19 @@ export function App() {
     fn(next);
     stateRef.current = next;
     setStateRaw(next);
-    if (dirsRef.current) writeState(dirsRef.current.root, next).catch((e) => say(`state: ${e}`, true));
+    if (dirsRef.current) writeState(dirsRef.current.project, next).catch((e) => say(`state: ${e}`, true));
     return next;
   };
 
   useEffect(() => {
-    loadRoot().then((h) => h && setSavedRoot(h));
-    loadGogglesDir().then((h) => h && setSavedGoggles(h));
-    loadLogsDir().then((h) => h && (savedLogs.current = h));
+    loadProject().then((v) => v && setSavedProject(v));
     // 개발용: ?opfs → 브라우저 내부 저장소(OPFS)를 폴더로 열기 (헤드리스 검증용, 배포 빌드에서 제거됨)
     if (import.meta.env.DEV && new URLSearchParams(location.search).has("opfs")) {
       const gog = new URLSearchParams(location.search).get("gog"); // ?opfs&gog=a/b → OPFS 하위 폴더를 고글 폴더로
       navigator.storage.getDirectory().then(async (h) => {
         let g: FileSystemDirectoryHandle | null = null;
         if (gog) for (const part of gog.split("/")) g = await (g ?? h).getDirectoryHandle(part, { create: true });
-        openFolder(h, g);
+        openProject(h, g ? { gogglesRaw: g } : {});
       });
     }
   }, []);
@@ -231,120 +230,101 @@ export function App() {
   // ---------- 스캔 ----------
   // reload: 폴더를 새로 열 때만 상태 파일을 디스크에서 읽는다. 그 외에는 메모리 상태가 최신
   // (작업 직후 다시 읽으면 아직 저장 중인 기록을 이전 내용으로 덮어쓰게 됨)
-  async function scan(d = dirsRef.current, quiet = false, reload = false) {
-    if (!d) return;
+  async function scan(d = dirsRef.current, quiet = false, reload = false): Promise<Library | null> {
+    if (!d) return null;
     if (!quiet) setLoading(true);
     try {
       await flushState();
       let st = stateRef.current;
       if (reload) {
-        st = await readState(d.root);
+        st = await readState(d.project);
         if (st.quota.day !== quotaDay()) st.quota = { day: quotaDay(), used: 0 };
         stateRef.current = st;
         setStateRaw(st);
       }
       // 지난번에 브라우저가 꺼지는 등으로 남은 임시 파일 정리 (작업 중이 아닐 때만)
       if (reload && !abortRef.current)
-        for await (const [name] of (d.ready as any).entries() as AsyncIterable<[string]>)
-          if (name.endsWith(".part")) await d.ready.removeEntry(name).catch(() => {});
+        for (const dir of [d.droneMerged, d.gogglesMerged, d.hud])
+          for await (const [name] of (dir as any).entries() as AsyncIterable<[string]>)
+            if (name.endsWith(".part")) await dir.removeEntry(name).catch(() => {});
       const ix = await scanIndex(d);
       setIdx(ix);
-      setLib(await buildLibrary(ix, st, config));
+      idxRef.current = ix;
+      const l = await buildLibrary(ix, st, config);
+      applyLib(l);
+      return l;
     } catch (e) {
       say(String(e), true);
+      return null;
     } finally {
       setLoading(false);
     }
   }
 
+  // 기록 없이 찾은 병합본(프레임 수 확인됨)은 상태에 기록해 둔다
+  function applyLib(l: Library) {
+    setLib(l);
+    if (l.adopt.length) update((s) => l.adopt.forEach((a) => (s.videos[a.name] ??= a.rec)));
+  }
+
   // 판단 기준·수동 선택이 바뀌면 묶음을 다시 계산 (파일 재스캔 없이)
   useEffect(() => {
-    if (idx) buildLibrary(idx, state, config).then(setLib);
+    if (idx) buildLibrary(idx, state, config).then(applyLib);
   }, [state.overrides, state.scores, state.videos, state.remote, config.minDuration, config.maxGap, config.simMax]);
 
-  // 폴더 고르기 창. 닫으면 null
-  async function pickDir(kind: "drone" | "goggles") {
+  // 폴더 고르기 창. 닫으면 null. 원본 역할은 읽기, 나머지는 쓰기 권한
+  async function pickDir(role: Role | "project") {
     try {
-      return (await (window as any).showDirectoryPicker(kind === "drone" ? { id: "dji", mode: "readwrite" } : { id: "goggles-sd", mode: "read" })) as FileSystemDirectoryHandle;
+      const mode = role !== "project" && READONLY_ROLES.includes(role) ? "read" : "readwrite";
+      return (await (window as any).showDirectoryPicker({ id: `contrail-${role}`, mode })) as FileSystemDirectoryHandle;
     } catch (e) {
       if ((e as Error).name !== "AbortError") say(String(e), true);
       return null;
     }
   }
 
-  // 고글 폴더 권한: 거절되거나 SD 카드가 빠져 있어도 드론 폴더는 열리게 한다 (사이드바에서 다시 연결)
-  const gogglesAccess = (h: FileSystemDirectoryHandle | null | undefined) => (h ? ensurePermission(h, "read").catch(() => false) : Promise.resolve(false));
+  // 원본 폴더 권한: 거절되거나 SD 카드가 빠져 있어도 프로젝트는 열리게 한다 (사이드바에서 다시 연결)
+  const readAccess = (h: FileSystemDirectoryHandle | null | undefined) => (h ? ensurePermission(h, "read").catch(() => false) : Promise.resolve(false));
 
-  // goggles: undefined = 기억해 둔 고글 폴더 그대로, null = 고글 폴더 없음
-  async function openFolder(h?: FileSystemDirectoryHandle, goggles?: FileSystemDirectoryHandle | null) {
+  // 프로젝트 열기: 하위 폴더 이름으로 역할을 추정하고, 사용자가 바꾼 칸(picks)을 덮어쓴다. 새 결과 폴더는 여기서 만든다
+  async function openProject(project: FileSystemDirectoryHandle, picks: RolePicks) {
     try {
-      const root = h ?? (await pickDir("drone"));
-      if (!root) return;
-      if (!(await ensurePermission(root))) return say(t("err.permission"), true);
-      await saveRoot(root);
-      const gog = goggles === undefined ? savedGoggles : goggles;
-      if (goggles !== undefined) await saveGogglesDir(goggles);
-      await gogglesAccess(gog);
-      const logs = savedLogs.current ?? (await loadLogsDir()) ?? null;
-      if (logs) await gogglesAccess(logs);
-      const d = await openDirs(root, gog, logs);
+      if (!(await ensurePermission(project))) return say(t("err.permission"), true);
+      for (const [role, h] of Object.entries(picks) as [Role, FileSystemDirectoryHandle | null][]) {
+        if (!h) continue;
+        if (READONLY_ROLES.includes(role)) await readAccess(h);
+        else if (!(await ensurePermission(h).catch(() => false))) return say(t("err.permission"), true);
+      }
+      const guess = await guessFor(project, !!picks.gogglesRaw);
+      const d = await resolveDirs(project, guess, picks);
+      const saved = { project, picks };
+      await saveProject(saved);
       dirsRef.current = d;
       setDirs(d);
-      setSavedRoot(root);
-      setSavedGoggles(gog);
+      setSavedProject(saved);
       setSelectedId(null);
       setThumbs({});
+      setShowSetup(false);
       await scan(d, false, true);
     } catch (e) {
       if ((e as Error).name !== "AbortError") say(String(e), true);
     }
   }
 
-  async function setGogglesFolder(h: FileSystemDirectoryHandle | null) {
-    const d = dirsRef.current;
-    if (!d) return;
-    await saveGogglesDir(h);
-    setSavedGoggles(h);
-    await gogglesAccess(h);
-    const next = { ...d, gogglesExt: h };
-    dirsRef.current = next;
-    setDirs(next);
-    await scan(next, true);
-    if (h) say(t("gfolder.linked", { name: h.name }));
+  async function setRole(role: Role, h: FileSystemDirectoryHandle | null) {
+    if (!savedProject) return;
+    await openProject(savedProject.project, { ...savedProject.picks, [role]: h });
   }
 
-  async function linkGogglesFolder() {
-    const h = await pickDir("goggles");
-    if (h) await setGogglesFolder(h);
+  async function reconnect(role: Role) {
+    const h = dirsRef.current?.[role as keyof Dirs] as FileSystemDirectoryHandle | null | undefined;
+    if (!h) return;
+    if (!(await readAccess(h))) return say(t("gfolder.denied"), true);
+    await scan(dirsRef.current, false);
   }
 
-  // 비행기록 폴더 (선택): 기체·고글에서 꺼낸 FlightRecords 폴더
-  async function linkLogsFolder() {
-    const d = dirsRef.current;
-    if (!d) return;
-    let h: FileSystemDirectoryHandle;
-    try {
-      h = await (window as any).showDirectoryPicker({ id: "dji-logs", mode: "read" });
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") say(String(e), true);
-      return;
-    }
-    await saveLogsDir(h);
-    savedLogs.current = h;
-    const next = { ...d, logsExt: h };
-    dirsRef.current = next;
-    setDirs(next);
-    await scan(next, true);
-  }
   // 비행과 시간이 겹치는 비행기록 요약
   const logOf = (f: Flight) => (idx?.logs.length ? matchLog(idx.logs, f.start, f.end) : null);
-
-  async function reconnectGoggles() {
-    const d = dirsRef.current;
-    if (!d?.gogglesExt) return;
-    if (!(await gogglesAccess(d.gogglesExt))) return say(t("gfolder.denied"), true);
-    await scan(d, false);
-  }
 
   // ---------- 연속성 분석 (병합 후보 쌍) ----------
   useEffect(() => {
@@ -406,21 +386,22 @@ export function App() {
     if (!p) {
       p = (async () => {
         const why: string[] = [];
-        if (f.output?.ref) {
+        if (f.output) {
           try {
-            const dir = (d as any)[f.output.ref.dir] as FileSystemDirectoryHandle;
-            const side = await (await dir.getFileHandle(telemetryFile(f.output.name))).getFile();
+            const sideName = telemetryFile(f.output.name);
+            const sideHandle = await d.droneMerged.getFileHandle(sideName).catch(() => ix.files.get(sideName)?.handle);
+            if (!sideHandle) throw new DOMException("", "NotFoundError");
+            const side = await sideHandle.getFile();
             const tel = fromJSON(await side.text());
             if (tel.t.length) return tel;
             why.push(`${telemetryFile(f.output.name)}: 0`);
           } catch (e) {
             why.push(`${telemetryFile(f.output.name)}: ${(e as Error).name}`);
           }
-          // 클립 하나짜리는 결과물이 원본 그대로라 영상 안의 비행 데이터를 바로 읽는다 (원본은 이미 옮겨졌을 수 있음)
-          if (f.clips.length === 1) {
+          // 클립 하나짜리는 결과물이 원본 그대로라 영상 안의 비행 데이터를 바로 읽는다
+          if (f.clips.length === 1 && f.output.ref) {
             try {
-              const dir = (d as any)[f.output.ref.dir] as FileSystemDirectoryHandle;
-              const tel = await readTelemetry(fileReader(await (await dir.getFileHandle(f.output.name)).getFile()));
+              const tel = await readTelemetry(fileReader(await f.output.ref.handle.getFile()));
               if (tel.t.length) return tel;
             } catch (e) {
               why.push(`${f.output.name}: ${(e as Error).name}`);
@@ -480,35 +461,28 @@ export function App() {
       s.prefs[id] = { ...defaultPrefs(), ...s.prefs[id], ...patch };
     });
 
-  async function moveRaw(stem: string, to: FileSystemDirectoryHandle, withMp4: boolean) {
-    const d = dirsRef.current!;
-    for (const ext of withMp4 ? ["MP4", "LRF", "SRT"] : ["LRF", "SRT"]) {
-      const name = `${stem}.${ext}`;
-      if (await exists(d.root, name)) await moveFile(d.root, name, to);
-    }
-  }
-
+  // 드론 병합: 원본은 읽기만 하고 드론 병합본 폴더에 쓴다 (클립 2개 이상인 비행만)
   async function doMerge(f: Flight, signal: AbortSignal): Promise<{ name: string; rec: VideoRecord }> {
     const d = dirsRef.current!;
+    const ix = idxRef.current!;
     const title = prefsOf(f.id).title || defaultTitle(f.start);
-    const files = await Promise.all(f.clips.map((c) => d.root.getFileHandle(c.name).then((h) => h.getFile())));
+    const files = await Promise.all(f.clips.map((c) => {
+      const ref = ix.files.get(c.name);
+      if (!ref) throw new Error(t("err.fileGone"));
+      return ref.handle.getFile();
+    }));
     const infos = await Promise.all(files.map(mediaInfo));
     const sourceFrames = infos.reduce((a, x) => a + x.frames, 0);
     const base: VideoRecord = {
       sources: f.clips.map((c) => c.name), title, start: f.start, duration: f.duration,
       clipDurations: f.clips.map((c) => c.duration), joinReasons: f.joins.map((j) => j.reason), youtubeId: f.youtubeId,
     };
-    if (f.clips.length === 1) {
-      const name = f.clips[0].name;
-      await moveFile(d.root, name, d.ready);
-      await moveRaw(f.clips[0].stem, d.sources, false);
-      return { name, rec: { ...base, verified: { frames: infos[0].frames, sourceFrames, duration: infos[0].duration } } };
-    }
     const name = `${f.id}_merged.MP4`;
-    if (await exists(d.ready, name)) await d.ready.removeEntry(name); // 이전에 중단된 결과물
+    const out = d.droneMerged;
+    if (await exists(out, name)) await out.removeEntry(name); // 이전에 중단된 결과물
     const total = files.reduce((a, x) => a + x.size, 0);
     setJob({ flightId: f.id, phase: "merge", done: 0, total, started: Date.now() });
-    const w = await (await d.ready.getFileHandle(name, { create: true })).createWritable();
+    const w = await (await out.getFileHandle(name, { create: true })).createWritable();
     try {
       await merge(files.map(fileReader), {
         write: async (c) => {
@@ -519,33 +493,36 @@ export function App() {
       await w.close();
     } catch (e) {
       await w.abort().catch(() => {});
-      await d.ready.removeEntry(name).catch(() => {});
+      await out.removeEntry(name).catch(() => {});
       throw e;
     }
     // 검증: 결과의 프레임 수 = 원본 합
     setJob({ flightId: f.id, phase: "verify", done: 0, total: 1, started: Date.now() });
-    const out = await (await d.ready.getFileHandle(name)).getFile();
-    const tr = await parse(fileReader(out));
+    const tr = await parse(fileReader(await (await out.getFileHandle(name)).getFile()));
     const verified = { frames: tr.count, sourceFrames, duration: tr.duration };
     if (tr.count !== sourceFrames) throw new Error(t("verify.fail", { a: tr.count, b: sourceFrames }));
     try {
       const tels = await Promise.all(files.map((x) => readTelemetry(fileReader(x))));
-      const w2 = await (await d.ready.getFileHandle(telemetryFile(name), { create: true })).createWritable();
+      const w2 = await (await out.getFileHandle(telemetryFile(name), { create: true })).createWritable();
       await w2.write(toJSON(concatTelemetry(tels, f.clips.map((c) => c.duration))));
       await w2.close();
     } catch {}
-    for (const c of f.clips) await moveRaw(c.stem, d.sources, true);
     return { name, rec: { ...base, duration: tr.duration, verified } };
+  }
+
+  // 병합본(드론 병합본 폴더) 또는 원본(클립 하나짜리) 파일 핸들
+  async function outputHandle(name: string) {
+    const h = await dirsRef.current!.droneMerged.getFileHandle(name).catch(() => idxRef.current?.files.get(name)?.handle);
+    if (!h) throw new Error(t("err.fileGone"));
+    return h;
   }
 
   async function doOverlay(f: Flight, outName: string, outRec: VideoRecord, signal: AbortSignal) {
     const d = dirsRef.current!;
     const p = prefsOf(f.id);
-    const inReady = await exists(d.ready, outName);
-    const dir = inReady ? d.ready : d.uploaded;
-    const handle = await dir.getFileHandle(outName);
+    const handle = await outputHandle(outName);
     const src = await handle.getFile();
-    const fl: Flight = { ...f, output: { name: outName, ref: { dir: inReady ? "ready" : "uploaded", handle } } };
+    const fl: Flight = { ...f, output: { name: outName, ref: { dir: f.clips.length > 1 ? "merged" : "raw", handle } } };
     const tel = p.instruments || p.map ? await telemetryOf(fl).catch(() => null) : null; // 비행 데이터가 없으면 고글 OSD 만
     const g = gogglesOf(f);
     const layout = layoutOf(stateRef.current);
@@ -561,8 +538,9 @@ export function App() {
     // 임시 파일에 만들고, 검증까지 끝나면 기존 HUD 영상과 바꾼다 (실패해도 기존 영상은 그대로)
     const name = `${f.id}_hud.MP4`;
     const tmp = `${name}.part`;
-    await d.ready.removeEntry(tmp).catch(() => {});
-    const w = await (await d.ready.getFileHandle(tmp, { create: true })).createWritable();
+    const out = d.hud;
+    await out.removeEntry(tmp).catch(() => {});
+    const w = await (await out.getFileHandle(tmp, { create: true })).createWritable();
     setJob({ flightId: f.id, phase: "render", done: 0, total: 1, started: Date.now() });
     const warned = new Set<string>();
     let res: Awaited<ReturnType<typeof renderOverlay>>;
@@ -578,21 +556,23 @@ export function App() {
       });
       await w.close();
       // 검증: 다시 읽어서 프레임 수 확인
-      const tr = await parse(fileReader(await (await d.ready.getFileHandle(tmp)).getFile()));
+      const tr = await parse(fileReader(await (await out.getFileHandle(tmp)).getFile()));
       if (tr.count !== res.frames) throw new Error(t("verify.fail", { a: tr.count, b: res.frames }));
-      await d.ready.removeEntry(name).catch(() => {});
-      await renameFile(d.ready, tmp, name);
+      await out.removeEntry(name).catch(() => {});
+      await renameFile(out, tmp, name);
     } catch (e) {
       await w.abort().catch(() => {});
-      await d.ready.removeEntry(tmp).catch(() => {});
+      await out.removeEntry(tmp).catch(() => {});
       throw friendlyError(e);
     }
     if (res.skipped) say(t("ov.skipped", { n: res.skipped }), true);
     if (tel) {
-      const w2 = await (await d.ready.getFileHandle(telemetryFile(name), { create: true })).createWritable();
+      const w2 = await (await out.getFileHandle(telemetryFile(name), { create: true })).createWritable();
       await w2.write(toJSON(tel));
       await w2.close();
     }
+    // 클립 하나짜리(원본이 결과)는 기록이 아직 없으면 같이 저장
+    if (f.synthetic) update((s) => void (s.videos[outName] ??= outRec));
     update((s) => (s.videos[name] = { ...outRec, title: `${outRec.title} (HUD)`, variant: "hud", youtubeId: undefined, playlistId: undefined, uploadedAt: undefined }));
   }
 
@@ -603,11 +583,12 @@ export function App() {
     if (segs.length < 2) return null;
     const files = segs.map((x) => x.info!.file);
     const name = `${f.id}_goggles.MP4`;
-    if (await exists(d.ready, name)) await d.ready.removeEntry(name);
+    const out = d.gogglesMerged;
+    if (await exists(out, name)) await out.removeEntry(name);
     const infos = await Promise.all(files.map(mediaInfo));
     const sourceFrames = infos.reduce((a, x) => a + x.frames, 0);
     setJob({ flightId: f.id, phase: "gmerge", done: 0, total: files.reduce((a, x) => a + x.size, 0), started: Date.now() });
-    const w = await (await d.ready.getFileHandle(name, { create: true })).createWritable();
+    const w = await (await out.getFileHandle(name, { create: true })).createWritable();
     try {
       await merge(files.map(fileReader), {
         write: async (c) => {
@@ -618,10 +599,10 @@ export function App() {
       await w.close();
     } catch (e) {
       await w.abort().catch(() => {});
-      await d.ready.removeEntry(name).catch(() => {});
+      await out.removeEntry(name).catch(() => {});
       throw e;
     }
-    const tr = await parse(fileReader(await (await d.ready.getFileHandle(name)).getFile()));
+    const tr = await parse(fileReader(await (await out.getFileHandle(name)).getFile()));
     if (tr.count !== sourceFrames) throw new Error(t("verify.fail", { a: tr.count, b: sourceFrames }));
     const rec: VideoRecord = {
       ...baseRec, sources: droneSources, title: `${baseRec.title} (${t("tl.goggles")})`, variant: "goggles", gogglesSources: segs.map((x) => x.link.file),
@@ -637,27 +618,39 @@ export function App() {
     return files.length > 1 && f.gogglesOut?.record.gogglesSources?.join() !== files.join();
   };
 
-  // 비행 하나 처리: 병합 → (고글 병합) → HUD. 실패하면 던진다
-  async function runOne(f: Flight, what: { merge: boolean; overlay: boolean; goggles?: boolean }, signal: AbortSignal) {
-    const title = prefsOf(f.id).title || t("flight", { n: f.number });
-    let outName = f.output?.name;
-    let outRec = f.record;
-    if (what.merge && f.status === "pending") {
-      setJob({ flightId: f.id, phase: "merge", done: 0, total: 1, started: Date.now() });
+  // ---------- 단계: ① 드론 병합 → ② 고글(맞춤·병합) → ③ HUD ----------
+  const titleOf = (f: Flight) => prefsOf(f.id).title || t("flight", { n: f.number });
+  const gogglesFacts = (f: Flight) => {
+    const g = gogglesOf(f);
+    const linked = g.links.filter((x) => x.info).sort((a, b) => a.link.offset - b.link.offset).map((x) => x.link.file);
+    return { linked, candidates: g.candidates.length, mergedSources: f.gogglesOut?.record.gogglesSources };
+  };
+  const stepsOf = (f: Flight) => computeSteps(f, gogglesFacts(f), prefsOf(f.id));
+  const todoOf = (l: Library | null) => computeTodo((l?.flights ?? []).map((f) => ({ f, s: stepsOf(f) })));
+
+  // 단계 하나를 비행 하나에. 실패하면 던진다. 결과 = 이 단계가 만든 결과물 이름·기록 (HUD 단계가 이어 쓰도록)
+  async function stepOne(step: StepKey, f: Flight, signal: AbortSignal, out?: { name: string; rec: VideoRecord }) {
+    const title = titleOf(f);
+    if (step === "drone") {
+      if (f.status !== "pending") return out;
       const r = await doMerge(f, signal);
       update((s) => (s.videos[r.name] = r.rec));
-      outName = r.name;
-      outRec = r.rec;
       say(t("toast.merged", { name: title }));
+      return r;
     }
-    // 드론 병합과 같이 고글 녹화도 병합 (연결된 고글이 여럿일 때)
-    if (outRec && gogglesMergeNeeded(f)) {
-      if (await doGogglesMerge(f, outRec.sources, outRec, signal)) say(t("toast.gmerged", { name: title }));
+    const name = out?.name ?? f.output?.name;
+    const rec = out?.rec ?? f.record;
+    if (step === "goggles") {
+      const g = gogglesOf(f);
+      if (g.candidates.length) await syncCore(f, g.candidates, signal);
+      // 고글 병합은 드론 쪽 결과(기록)가 있어야 함: 병합 대기 비행은 맞춤만
+      if (rec && f.status !== "pending" && gogglesMergeNeeded(f) && (await doGogglesMerge(f, rec.sources, rec, signal))) say(t("toast.gmerged", { name: title }));
+      return out;
     }
-    if (what.overlay && outName && outRec) {
-      await doOverlay(f, outName, outRec, signal);
-      say(t("toast.overlay", { name: title }));
-    }
+    if (!name || !rec) return out;
+    await doOverlay(f, name, rec, signal);
+    say(t("toast.overlay", { name: title }));
+    return out;
   }
   const reportError = (title: string, err: unknown) => {
     const e = friendlyError(err);
@@ -666,14 +659,24 @@ export function App() {
     return aborted;
   };
 
+  // 비행 하나 (프로젝트 화면의 버튼): 병합 → (고글 병합) → HUD
   async function run(f: Flight, what: { merge: boolean; overlay: boolean; goggles?: boolean }) {
     if (!dirsRef.current || job) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      await runOne(f, what, ctrl.signal);
+      let out: { name: string; rec: VideoRecord } | undefined;
+      if (what.merge) out = await stepOne("drone", f, ctrl.signal);
+      if (out || f.status !== "pending") {
+        const g = gogglesOf(f);
+        if (g.links.some((x) => x.info) && gogglesMergeNeeded(f)) {
+          const rec = out?.rec ?? f.record;
+          if (rec && (await doGogglesMerge(f, rec.sources, rec, ctrl.signal))) say(t("toast.gmerged", { name: titleOf(f) }));
+        }
+      }
+      if (what.overlay) await stepOne("hud", f, ctrl.signal, out);
     } catch (err) {
-      reportError(prefsOf(f.id).title || t("flight", { n: f.number }), err);
+      reportError(titleOf(f), err);
     } finally {
       abortRef.current = null;
       setJob(null);
@@ -681,49 +684,43 @@ export function App() {
     }
   }
 
-  // 일괄 처리 대상: 병합 대기 + HUD 영상이 아직 없는 비행 (HUD·고글 OSD 를 다 끈 비행은 병합만)
-  const batchTodo = (): { f: Flight; overlay: boolean }[] =>
-    (lib?.flights ?? [])
-      .map((f) => {
-        const p = prefsOf(f.id);
-        const wants = p.instruments || p.map || (p.goggles && gogglesOf(f).links.some((x) => x.info));
-        return { f, overlay: wants && !f.overlay };
-      })
-      .filter((x) => x.f.status === "pending" || x.overlay)
-      .sort((a, b) => a.f.start - b.f.start);
-
-  // 모두 처리: 비행마다 차례로. 하나가 실패해도 다음 비행은 계속, 중단하면 거기서 멈춤
-  async function runAll() {
+  // 단계별 일괄: 대상 비행을 시간순으로 하나씩. 하나가 실패해도 다음 비행은 계속, 중단하면 거기서 멈춤.
+  // "all" = ① 전체 → ② 전체 → ③ 전체 (단계 사이에 다시 읽어서 앞 단계 결과를 반영)
+  async function runStep(step: StepKey | "all") {
     if (!dirsRef.current || job) return;
-    const todo = batchTodo();
-    if (!todo.length) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    let ok = 0, failed = 0;
+    let ok = 0, failed = 0, blocked = 0;
+    let current = lib;
     try {
-      for (const [i, x] of todo.entries()) {
-        if (ctrl.signal.aborted) break;
-        const title = flightTitle(x.f, stateRef.current, (n) => t("flight", { n }));
-        setBatch({ i: i + 1, n: todo.length, label: `${fmtDayShort(x.f.start)} · ${title}` });
-        try {
-          await runOne(x.f, { merge: true, overlay: x.overlay }, ctrl.signal);
-          ok++;
-        } catch (err) {
-          // 비행 데이터·고글이 없어 HUD 를 못 만드는 비행은 병합만 된 것으로 침
-          if ((err as Error)?.message === t("ov.noTelemetry")) {
+      outer: for (const st of step === "all" ? (["drone", "goggles", "hud"] as StepKey[]) : [step]) {
+        const todo = todoOf(current);
+        if (st === "hud") blocked = todo.hudBlocked;
+        const list = todo[st];
+        for (const [i, f] of list.entries()) {
+          if (ctrl.signal.aborted) break outer;
+          const title = flightTitle(f, stateRef.current, (n) => t("flight", { n }));
+          setBatch({ step: st, i: i + 1, n: list.length, label: `${fmtDayShort(f.start)} · ${title}` });
+          try {
+            await stepOne(st, f, ctrl.signal);
             ok++;
-            say(`${title}: ${t("batch.noTel")}`, true);
-          } else if (reportError(title, err)) break;
-          else failed++;
+          } catch (err) {
+            // 비행 데이터·고글이 없어 HUD 를 못 만드는 비행은 알리고 넘어감
+            if (st === "hud" && (err as Error)?.message === t("ov.noTelemetry")) say(`${title}: ${t("batch.noTel")}`, true);
+            else if (reportError(title, err)) break outer;
+            else failed++;
+          }
         }
+        setJob(null);
+        current = (await scan(dirsRef.current, true)) ?? current;
       }
     } finally {
       abortRef.current = null;
       setBatch(null);
       setJob(null);
-      await scan(dirsRef.current, true);
     }
     if (ok || failed) say(t(failed ? "batch.doneSome" : "batch.done", { n: ok, m: failed }), failed > 0);
+    if (blocked) say(t("step.hudBlocked", { n: blocked }), true);
   }
 
   // ---------- 고글 ----------
@@ -771,40 +768,6 @@ export function App() {
     }
   }
 
-  // 폴더를 열면 고글 후보가 있는 모든 비행을 차례로 자동 맞춤 (비행·후보 조합마다 한 번만 시도)
-  const autoTried = useRef(new Set<string>());
-  const autoRunning = useRef(false);
-  useEffect(() => {
-    if (!lib || !idx || job || autoRunning.current) return;
-    const todo = lib.flights
-      .map((f) => ({ f, list: gogglesOf(f).candidates }))
-      .filter((x) => x.list.length && !autoTried.current.has(`${x.f.id}|${x.list.map((g) => g.name).join()}`));
-    if (!todo.length) return;
-    autoRunning.current = true;
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    (async () => {
-      let ok = 0;
-      try {
-        for (const [i, { f, list }] of todo.entries()) {
-          autoTried.current.add(`${f.id}|${list.map((g) => g.name).join()}`);
-          setJob({ phase: "autoSync", done: i, total: todo.length, started: Date.now(), label: `${fmtDayShort(f.start)} · ${flightTitle(f, stateRef.current, (n) => t("flight", { n }))}` });
-          try {
-            await syncCore(f, list, ctrl.signal);
-            ok++;
-          } catch (e) {
-            if ((e as Error).name === "AbortError") throw e;
-            console.warn("[autoSync]", f.id, e);
-          }
-        }
-      } catch {}
-      abortRef.current = null;
-      autoRunning.current = false;
-      setJob(null);
-      if (ok) say(t("gog.autoSynced", { n: ok }));
-    })();
-  }, [lib, idx, job]);
-
   const nudgeGoggles = (f: Flight, file: string, delta: number) =>
     update((s) => {
       const links = linksOf(s, f.id);
@@ -835,6 +798,14 @@ export function App() {
   async function addGoggles(from: "folder" | "files" = "folder") {
     const d = dirsRef.current;
     if (!d || job) return;
+    // 복사할 곳 = 고글 원본 폴더 (이때만 쓰기 권한). 없으면 프로젝트에 goggles_raw 를 만들어 고글 원본으로 정함
+    let target = d.gogglesRaw;
+    if (target && !(await ensurePermission(target).catch(() => false))) return say(t("err.permission"), true);
+    const makeTarget = async () => {
+      if (target) return target;
+      target = await d.project.getDirectoryHandle("goggles_raw", { create: true });
+      return target;
+    };
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let added = 0, same = 0, unmatched = 0;
@@ -873,19 +844,20 @@ export function App() {
       }
       for (const f of picked) {
         // 같은 이름: 크기도 같으면 이미 있는 것, 다르면(다른 SD 카드의 같은 번호) 이름을 바꿔 저장
+        const dest = await makeTarget();
         let name = f.name;
-        if (await exists(d.goggles, name)) {
-          if ((await (await d.goggles.getFileHandle(name)).getFile()).size === f.size) {
+        if (await exists(dest, name)) {
+          if ((await (await dest.getFileHandle(name)).getFile()).size === f.size) {
             same++;
             continue;
           }
           const [stem, ext] = [name.replace(/\.[^.]+$/, ""), name.slice(name.lastIndexOf("."))];
           let k = 2;
-          while (await exists(d.goggles, `${stem}_${k}${ext}`)) k++;
+          while (await exists(dest, `${stem}_${k}${ext}`)) k++;
           name = `${stem}_${k}${ext}`;
         }
         setJob({ phase: "copy", done: 0, total: f.size, started: Date.now(), label: name });
-        const w = await (await d.goggles.getFileHandle(name, { create: true })).createWritable();
+        const w = await (await dest.getFileHandle(name, { create: true })).createWritable();
         try {
           let done = 0, shown = 0;
           const reader = f.stream().getReader();
@@ -902,7 +874,7 @@ export function App() {
         } catch (e) {
           // 중간에 끊긴 파일이 남으면 다음에 "이미 있음"으로 건너뛰게 되므로 지움
           await w.abort().catch(() => {});
-          await d.goggles.removeEntry(name).catch(() => {});
+          await dest.removeEntry(name).catch(() => {});
           throw e;
         }
       }
@@ -914,12 +886,13 @@ export function App() {
     } finally {
       abortRef.current = null;
       setJob(null);
-      await scan(d, true);
+      if (target && !d.gogglesRaw) await setRole("gogglesRaw", target);
+      else await scan(d, true);
     }
   }
 
 
-  // ---------- 제외 ----------
+  // ---------- 제외 (상태로만; 원본 파일은 옮기지 않음) ----------
   const setOverride = (name: string, key: "excluded" | "mergePrev", v: boolean | undefined) =>
     update((s) => {
       const o = { ...s.overrides[name], [key]: v };
@@ -927,21 +900,6 @@ export function App() {
       if (Object.keys(o).length) s.overrides[name] = o;
       else delete s.overrides[name];
     });
-
-  async function tidyExcluded() {
-    const d = dirsRef.current;
-    if (!d || !lib) return;
-    for (const e of lib.excluded.filter((x) => x.dir === "root")) await moveRaw(e.name.replace(/\.mp4$/i, ""), d.excluded, true).catch((x) => say(String(x), true));
-    await scan(d, true);
-  }
-  async function restoreExcluded(name: string) {
-    const d = dirsRef.current;
-    if (!d) return;
-    const stem = name.replace(/\.mp4$/i, "");
-    for (const ext of ["MP4", "LRF", "SRT"]) if (await exists(d.excluded, `${stem}.${ext}`)) await moveFile(d.excluded, `${stem}.${ext}`, d.root);
-    setOverride(name, "excluded", false);
-    await scan(d, true);
-  }
 
   // ---------- YouTube (옵션) ----------
   const useQuota = (n: number) => update((s) => (s.quota.used += n));
@@ -1043,12 +1001,13 @@ export function App() {
   }
 
   const ctx: AppCtx = {
-    config, saveConfig, dirs, savedRoot, savedGoggles, logOf, linkLogsFolder, idx, lib, state, view, setView, day, setDay, query, setQuery, sortNew, setSortNew,
-    selected, select: setSelectedId, job, log, loading, account, showSettings, setShowSettings,
-    batch, batchTodo, runAll, openFolder, pickDir, setGogglesFolder, reconnectGoggles, linkGogglesFolder, refresh: () => scan(dirsRef.current, false, true), setOverride, prefsOf, setPrefs, run, cancel: () => abortRef.current?.abort(),
+    config, saveConfig, dirs, savedProject, logOf, idx, lib, state, view, setView, day, setDay, query, setQuery, sortNew, setSortNew,
+    selected, select: setSelectedId, job, log, loading, account, showSettings, setShowSettings, showSetup, setShowSetup,
+    batch, stepsOf, stepTodo: () => todoOf(lib), runStep, openProject, pickDir, setRole, reconnect,
+    refresh: async () => void (await scan(dirsRef.current, false, true)), setOverride, prefsOf, setPrefs, run, cancel: () => abortRef.current?.abort(),
     thumb: (stem) => thumbs[stem], seam, telemetryOf, previewFile, gogglesOf, gogglesMergeNeeded, setGogglesView, syncGogglesFor, nudgeGoggles, unlinkGoggles, addGoggles,
     layout: layoutOf(state), setLayout,
-    tidyExcluded, restoreExcluded, ytLogin, ytSync, ytUpload, quotaLeft, perUpload,
+    ytLogin, ytSync, ytUpload, quotaLeft, perUpload,
   };
   return (
     <Ctx.Provider value={ctx}>

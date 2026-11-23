@@ -1,14 +1,7 @@
-// 폴더 구조 + 상태 파일(dji_state.json) 관리. File System Access API (Chrome/Edge 전용).
-//
-//   <루트>/            1. 병합대기 (SD카드에서 복사한 원본 DJI_*.MP4/.LRF/.SRT)
-//   <루트>/2_ready/    2. 병합완료 = 업로드 대기
-//   <루트>/3_uploaded/ 3. 업로드 완료
-//   <루트>/_sources/   병합에 사용된 원본 (확인 후 삭제해도 됨)
-//   <루트>/_excluded/  자동/수동 제외된 클립
+// 상태 파일(dji_state.json) 관리. File System Access API (Chrome/Edge 전용).
+// 폴더 역할(드론 원본·고글 원본·결과 폴더)은 roles.ts. 상태 파일은 프로젝트 폴더에 둔다.
 import type { Override } from "./plan.ts";
-import { t as msg } from "./i18n.ts";
 
-export const DIRS = { ready: "2_ready", uploaded: "3_uploaded", sources: "_sources", excluded: "_excluded", goggles: "goggles" } as const;
 export const STATE_FILE = "dji_state.json";
 export const telemetryFile = (videoName: string) => `${videoName}.telemetry.json`;
 export const RAW_RE = /^(DJI_\d{14}_\d{4}_D)\.(MP4|LRF|SRT)$/i;
@@ -134,16 +127,6 @@ export function writeState(root: FileSystemDirectoryHandle, s: State) {
   return writing;
 }
 
-export const subdir = (root: FileSystemDirectoryHandle, name: string) => root.getDirectoryHandle(name, { create: true });
-
-export async function listFiles(dir: FileSystemDirectoryHandle) {
-  const out: Record<string, FileSystemFileHandle> = {};
-  for await (const [name, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
-    if (h.kind === "file") out[name] = h as FileSystemFileHandle;
-  }
-  return out;
-}
-
 export async function exists(dir: FileSystemDirectoryHandle, name: string) {
   try {
     await dir.getFileHandle(name);
@@ -151,24 +134,6 @@ export async function exists(dir: FileSystemDirectoryHandle, name: string) {
   } catch {
     return false;
   }
-}
-
-// 같은 볼륨이면 move() 로 즉시 이동, 미지원이면 복사 후 삭제
-export async function moveFile(from: FileSystemDirectoryHandle, name: string, to: FileSystemDirectoryHandle) {
-  if (await exists(to, name)) throw new Error(msg("err.exists", { path: `${to.name}/${name}` }));
-  const h = await from.getFileHandle(name);
-  if (typeof (h as any).move === "function") {
-    try {
-      await (h as any).move(to);
-      return;
-    } catch (e) {
-      if ((e as DOMException).name !== "NotSupportedError") throw e;
-    }
-  }
-  const src = await h.getFile();
-  const w = await (await to.getFileHandle(name, { create: true })).createWritable();
-  await src.stream().pipeTo(w);
-  await from.removeEntry(name);
 }
 
 // ---- 폴더 핸들 기억 (IndexedDB) ----
@@ -185,16 +150,23 @@ function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
     };
   });
 }
-export const saveRoot = (h: FileSystemDirectoryHandle) => idb("readwrite", (s) => s.put(h, "root")).catch(() => {});
-export const loadRoot = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("root")).catch(() => undefined);
-
-// 고글 녹화 폴더 (읽기 전용, 선택 사항). null = "고글 없음"으로 정함
-export const saveGogglesDir = (h: FileSystemDirectoryHandle | null) =>
-  idb<unknown>("readwrite", (s) => (h ? s.put(h, "goggles") : s.delete("goggles")) as IDBRequest<unknown>).catch(() => {});
-export const saveLogsDir = (h: FileSystemDirectoryHandle | null) =>
-  idb<unknown>("readwrite", (s) => (h ? s.put(h, "logs") : s.delete("logs")) as IDBRequest<unknown>).catch(() => {});
-export const loadLogsDir = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("logs")).catch(() => undefined);
-export const loadGogglesDir = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("goggles")).catch(() => undefined);
+// 프로젝트 폴더 + 사용자가 칸에서 바꾼 역할 폴더 (자동 추정한 것은 저장하지 않고 열 때마다 다시 추정)
+export interface SavedProject {
+  project: FileSystemDirectoryHandle;
+  picks: Partial<Record<"droneRaw" | "gogglesRaw" | "droneMerged" | "gogglesMerged" | "hud" | "logs", FileSystemDirectoryHandle | null>>;
+}
+export const saveProject = (v: SavedProject) => idb("readwrite", (s) => s.put(v, "project")).catch(() => {});
+const getKey = <T,>(k: string) => idb<T | undefined>("readonly", (s) => s.get(k)).catch(() => undefined);
+// 예전 버전이 기억한 드론 폴더(root)·고글 폴더·비행기록 폴더는 프로젝트로 옮겨 온다
+export async function loadProject(): Promise<SavedProject | null> {
+  const v = await getKey<SavedProject>("project");
+  if (v) return v;
+  const root = await getKey<FileSystemDirectoryHandle>("root");
+  if (!root) return null;
+  const goggles = await getKey<FileSystemDirectoryHandle>("goggles");
+  const logs = await getKey<FileSystemDirectoryHandle>("logs");
+  return { project: root, picks: { ...(goggles ? { gogglesRaw: goggles } : {}), ...(logs ? { logs } : {}) } };
+}
 
 export async function ensurePermission(h: FileSystemDirectoryHandle, mode: "read" | "readwrite" = "readwrite") {
   const opts = { mode } as const;
