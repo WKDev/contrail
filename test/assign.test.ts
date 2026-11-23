@@ -48,3 +48,20 @@ test("learnClockErr 기준", () => {
   assert.equal(medianErr([-118, -120, -125]), -120);
   assert.equal(shiftGoggles({ start: 1000, x: 1 }, -1).start, 0);
 });
+
+// ---- 최종 리뷰 수정 ----
+test("시계 오차는 원래 고글 시각 기준 절댓값 (여러 번 맞춰도 쌓이지 않음)", async () => {
+  const { clockSample } = await import("../src/assign.ts");
+  // 진짜 오차 -10초: 고글 시계 기준 coarse = 100, 실제 offset = 90
+  const flightStart = T, gStart = T + 100_000;
+  assert.equal(clockSample(gStart, flightStart, 90, 0.9), -10);
+  assert.equal(clockSample(gStart, flightStart, 90, 0.9), -10); // 두 번째 녹화도 같은 값
+  assert.equal(clockSample(gStart, flightStart, 99, 0.9), null); // 3초 미만
+});
+
+test("주인 판정용 비행 찾기는 그 기체 오차로 한 번만 보정", async () => {
+  const { bestFlightFor } = await import("../src/assign.ts");
+  const fs = [fl("p1", "pavopro2", 0, 300), fl("p2", "pavopro2", 5000, 300)];
+  assert.equal(bestFlightFor(g("G1", 600, 300), fs, -600)?.id, "p1");
+  assert.equal(bestFlightFor(g("G1", 600, 300), fs, 0), null);
+});

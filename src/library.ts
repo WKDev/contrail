@@ -83,7 +83,7 @@ export async function scanIndex(d: Dirs): Promise<Index> {
       try {
         const f = await firstRaw[1].handle.getFile();
         const text = new TextDecoder("latin1").decode(await f.slice(0, 2_000_000).arrayBuffer());
-        for (const m of text.matchAll(/DJI ([A-Za-z0-9 ]{2,20})\0/g)) if (!/^FC/.test(m[1])) { model = m[1].trim(); break; }
+        for (const m of text.matchAll(/DJI ([A-Za-z0-9 ]{2,20}?)(?=[^A-Za-z0-9 ])/g)) if (!/^FC/.test(m[1])) { model = m[1].trim(); break; }
       } catch {}
     }
     aircraftInfo.push({ id: a.id, model });
@@ -201,7 +201,9 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
   const doneFlight = async (name: string, rec: VideoRecord, extra: Partial<Flight> = {}): Promise<Flight> => {
     const id = stemOf(rec.sources[0]);
     const ref = idx.files.get(name);
-    const aircraft = rec.aircraft ?? (ref?.aircraft || idx.files.get(rec.sources[0])?.aircraft || idx.aircraft[0]?.id || "default");
+    // 기체 = 결과 파일이 있는 곳 → 원본이 있는 곳 → 기록에 적힌 기체(지금 있는 기체일 때만) → 첫 기체
+    const known = (a?: string) => (a && idx.aircraft.some((x) => x.id === a) ? a : undefined);
+    const aircraft = ref?.aircraft || idx.files.get(rec.sources[0])?.aircraft || known(rec.aircraft) || idx.aircraft[0]?.id || "default";
     const durs = rec.clipDurations ?? (await sourceDurations(idx, rec, info));
     const cs: Clip[] = rec.sources.map((src, i) => ({
       name: src, stem: stemOf(src), start: parseStart(src) ?? rec.start, duration: durs[i] ?? rec.duration / rec.sources.length, size: idx.sizes.get(src) ?? 0,
@@ -279,7 +281,7 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
       const duration = g.reduce((a, c) => a + c.duration, 0);
       const base: VideoRecord = {
         sources: g.map((c) => c.name), title: defaultTitle(g[0].start), start: g[0].start, duration,
-        clipDurations: g.map((c) => c.duration), joinReasons: joins.map((j) => j.reason), aircraft,
+        clipDurations: g.map((c) => c.duration), joinReasons: joins.map((j) => j.reason), ...(aircraft !== "default" ? { aircraft } : {}),
       };
       // 클립 하나 = 병합할 것 없음: 원본이 곧 결과
       if (g.length === 1) {

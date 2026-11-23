@@ -240,3 +240,27 @@ test("기체 모델을 읽는다", async () => {
   assert.equal(ix.aircraft[0].model, "O4P");
   delete contents[`${X}.MP4`];
 });
+
+test("실제 파일처럼 모델 뒤가 protobuf 태그여도 읽는다", async () => {
+  const X = "DJI_20261115123631_0001_D";
+  contents[`${X}.MP4`] = "a\x12\x0bDJI FC8885-\x12\x07DJI O4P\x12\x05zz";
+  const ix = await scanIndex(dirs({ raw: { [`${X}.MP4`]: 9 } }));
+  assert.equal(ix.aircraft[0].model, "O4P");
+  delete contents[`${X}.MP4`];
+});
+
+test("기록의 기체보다 결과 파일 위치가 우선 (default·이름 바뀐 기체)", async () => {
+  const d = dirs({ raw: { [`${A}.MP4`]: 9, [`${B}.MP4`]: 9 }, merged: { [`${A}_merged.MP4`]: 18 } });
+  const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { aircraft: "default" }) }));
+  assert.equal(l.flights[0].aircraft, "avata2");
+  const l2 = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { aircraft: "oldname" }) }));
+  assert.equal(l2.flights[0].aircraft, "avata2");
+});
+
+test("단일 기체 모드에서는 default 를 기록에 남기지 않는다", async () => {
+  const project = fakeDir("old", { "DJI_20261028130230_0001_D.MP4": 5 });
+  const d: Dirs = { project, aircraft: [{ id: "default", raw: project, merged: fakeDir("2_ready"), hud: fakeDir("2_ready") }], gogglesRaw: null, gogglesExtra: null, gogglesMerged: fakeDir("2_ready"), logs: null, legacy: [], excluded: null };
+  const l = await lib(d, emptyState());
+  assert.equal(l.flights[0].aircraft, "default");
+  assert.equal(l.flights[0].record?.aircraft, undefined);
+});

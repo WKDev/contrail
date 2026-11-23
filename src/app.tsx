@@ -13,7 +13,7 @@ import {
 } from "./store.ts";
 import { buildLibrary, flightTitle, mediaInfo, proxyRef, scanIndex, type Dirs, type Flight, type Index, type Library } from "./library.ts";
 import { guessFor, isReadonlyPick, migratePicks, resolveDirs, type AircraftDirs, type PickKey, type RolePicks } from "./roles.ts";
-import { learnClockErr, medianErr, ownerOfGoggles, shiftGoggles, type Owner } from "./assign.ts";
+import { bestFlightFor, clockSample, medianErr, ownerOfGoggles, shiftGoggles, type Owner } from "./assign.ts";
 import { stepsOf as computeSteps, stepTodo as computeTodo, type Steps } from "./steps.ts";
 import { concatTelemetry, fromJSON, readTelemetry, toJSON, type Telemetry } from "./telemetry.ts";
 import { renderOverlay } from "./render.ts";
@@ -154,6 +154,8 @@ export function App() {
   const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [hasTelemetry, setHasTelemetry] = useState<Record<string, boolean>>({});
+  const telRef = useRef<Record<string, boolean>>({});
+  const telChecks = useRef(new Map<string, Promise<boolean>>());
   const [aircraftFilter, setAircraftFilter] = useState<string | null>(null);
   const libRef = useRef<Library | null>(null);
   const [batch, setBatch] = useState<AppCtx["batch"]>(null);
@@ -314,6 +316,10 @@ export function App() {
       }
       const guess = await guessFor(project, !!picks.gogglesRaw);
       const d = await resolveDirs(project, guess, picks);
+      // 기체 정보는 프로젝트마다 다시
+      telChecks.current.clear();
+      telRef.current = {};
+      setHasTelemetry({});
       const saved = { project, picks };
       await saveProject(saved);
       dirsRef.current = d;
@@ -397,24 +403,32 @@ export function App() {
     return d.aircraft.find((a) => a.id === f.aircraft) ?? d.aircraft[0];
   };
 
-  // 기체별 비행 데이터 유무: 첫 원본 클립에 유효한 GPS 또는 자세가 있는지 (기체마다 1회)
+  // 기체별 비행 데이터 유무: 첫 원본 클립에 유효한 GPS 또는 자세가 있는지 (기체마다 1회, 기다릴 수 있음)
+  function aircraftHasTel(id: string): Promise<boolean> {
+    let p = telChecks.current.get(id);
+    if (!p) {
+      p = (async () => {
+        const ix = idxRef.current;
+        const first = ix && [...ix.files.values()].find((r) => r.aircraft === id && r.dir === "raw" && /\.mp4$/i.test(r.handle.name));
+        let ok = true; // 원본이 없으면 판단 못 함 → 기본값(켬)
+        if (first) {
+          try {
+            const tel = await readTelemetry(fileReader(await first.handle.getFile()));
+            ok = tel.t.length > 0 && (tel.lat.some((v) => !Number.isNaN(v) && v !== 0) || tel.pitch.some((v) => v !== 0) || tel.roll.some((v) => v !== 0));
+          } catch {
+            ok = false;
+          }
+        }
+        telRef.current = { ...telRef.current, [id]: ok };
+        setHasTelemetry(telRef.current);
+        return ok;
+      })();
+      telChecks.current.set(id, p);
+    }
+    return p;
+  }
   useEffect(() => {
-    if (!idx) return;
-    let cancelled = false;
-    (async () => {
-      for (const a of idx.aircraft) {
-        if (cancelled || hasTelemetry[a.id] !== undefined) continue;
-        const first = [...idx.files.values()].find((r) => r.aircraft === a.id && r.dir === "raw" && /\.mp4$/i.test(r.handle.name));
-        if (!first) continue;
-        let ok = false;
-        try {
-          const tel = await readTelemetry(fileReader(await first.handle.getFile()));
-          ok = tel.t.length > 0 && (tel.lat.some((v) => !Number.isNaN(v) && v !== 0) || tel.pitch.some((v) => v !== 0) || tel.roll.some((v) => v !== 0));
-        } catch {}
-        if (!cancelled) setHasTelemetry((m) => ({ ...m, [a.id]: ok }));
-      }
-    })();
-    return () => void (cancelled = true);
+    idx?.aircraft.forEach((a) => void aircraftHasTel(a.id));
   }, [idx]);
 
   // ---------- 비행 데이터 ----------
@@ -502,7 +516,7 @@ export function App() {
   // 기본값은 기체에 따라: 비행 데이터가 없는 기체는 계기·지도 끔
   const basePrefs = (id: string) => {
     const a = libRef.current?.flights.find((f) => f.id === id)?.aircraft;
-    return prefsDefault(a ? hasTelemetry[a] ?? true : true);
+    return prefsDefault(a ? telRef.current[a] ?? true : true);
   };
   const prefsOf = (id: string) => ({ ...basePrefs(id), ...stateRef.current.prefs?.[id] });
   const setPrefs = (id: string, patch: Partial<FlightPrefs>) =>
@@ -565,7 +579,7 @@ export function App() {
       await w2.write(toJSON(concatTelemetry(tels, f.clips.map((c) => c.duration))));
       await w2.close();
     } catch {}
-    return { name, rec: { ...base, duration: tr.duration, verified, aircraft: f.aircraft } };
+    return { name, rec: { ...base, duration: tr.duration, verified, ...(f.aircraft !== "default" ? { aircraft: f.aircraft } : {}) } };
   }
 
   // 병합본(드론 병합본 폴더) 또는 원본(클립 하나짜리) 파일 핸들
@@ -577,6 +591,7 @@ export function App() {
 
   async function doOverlay(f: Flight, outName: string, outRec: VideoRecord, signal: AbortSignal) {
     const d = dirsRef.current!;
+    await aircraftHasTel(f.aircraft); // 비행 데이터 유무를 알아야 기본값(계기·지도)이 정해짐
     const p = prefsOf(f.id);
     const handle = await outputHandle(outName, f);
     const src = await handle.getFile();
@@ -631,7 +646,7 @@ export function App() {
     }
     // 클립 하나짜리(원본이 결과)는 기록이 아직 없으면 같이 저장
     if (f.synthetic) update((s) => void (s.videos[outName] ??= outRec));
-    update((s) => (s.videos[name] = { ...outRec, aircraft: f.aircraft, title: `${outRec.title} (HUD)`, variant: "hud", youtubeId: undefined, playlistId: undefined, uploadedAt: undefined }));
+    update((s) => (s.videos[name] = { ...outRec, ...(f.aircraft !== "default" ? { aircraft: f.aircraft } : {}), title: `${outRec.title} (HUD)`, variant: "hud", youtubeId: undefined, playlistId: undefined, uploadedAt: undefined }));
   }
 
   // 고글 녹화 병합: 비행에 연결된 고글 파일들을 시간순으로 무손실 이어붙임 (프레임 수 검증)
@@ -826,35 +841,38 @@ export function App() {
     const clips = await clipRefs(f);
     for (const [i, g] of list.entries()) {
       const r = await syncGoggles(clips, g, { signal, search, onStage: (s) => onStage?.(i * 2 + (s === "flight" ? 0 : 1)) });
-      const extra = learnClockErr(r.coarse, r.offset, r.score);
+      // 원래(보정 전) 고글 시각 기준 절대 오차 → 같은 호출 안에서 여러 녹화를 맞춰도 쌓이지 않음
+      const orig = idxRef.current?.goggles.find((x) => x.name === g.name) ?? g;
+      const sample = clockSample(orig.start, f.start, r.offset, r.score);
       update((s) => {
         s.goggles ??= {};
         const links = linksOf(s, f.id).filter((l) => l.file !== g.name);
         links.push({ file: g.name, offset: Math.round(r.offset * 1000) / 1000, score: Math.round(r.score * 1000) / 1000 });
         s.goggles[f.id] = links.sort((a, b) => a.offset - b.offset);
-        if (extra !== null) {
-          const total = clockErr(f.aircraft, f.day) + extra;
+        if (sample !== null) {
           s.clock ??= {};
           s.clock[f.aircraft] ??= {};
-          (s.clock[f.aircraft][f.day] ??= []).push(Math.round(total * 1000) / 1000);
+          (s.clock[f.aircraft][f.day] ??= []).push(sample);
         }
       });
     }
   }
 
   // 주인 기체가 애매한 녹화: 후보 기체마다 가장 많이 겹치는 비행과 맞춰 점수가 높은 기체로 (차이 0.1 이상일 때만)
-  async function resolveOwner(g: GogglesInfo, signal: AbortSignal) {
-    const own = ownerOf(g.name);
+  async function resolveOwner(shifted: GogglesInfo, signal: AbortSignal) {
+    const own = ownerOf(shifted.name);
     if (own?.by !== "ambiguous") return;
+    // gogglesOf 가 넘긴 녹화는 이미 한 기체 오차로 보정돼 있으니 원래 녹화에서 기체마다 한 번만 보정
+    const g = idxRef.current?.goggles.find((x) => x.name === shifted.name) ?? shifted;
     const scores: { aircraft: string; score: number }[] = [];
     for (const a of own.candidates) {
       const fs = (libRef.current?.flights ?? []).filter((f) => f.aircraft === a);
-      const best = fs
-        .map((f) => ({ f, ov: Math.max(0, Math.min(f.end, g.start + g.duration * 1000) - Math.max(f.start, g.start)) }))
-        .sort((x, y) => y.ov - x.ov)[0];
-      if (!best?.ov) continue;
+      const d = new Date(g.start);
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; // 비행 day 와 같은 형식
+      const best = bestFlightFor(g, fs, clockErr(a, day));
+      if (!best) continue;
       try {
-        const r = await syncGoggles(await clipRefs(best.f), shiftGoggles(g, clockErr(a, best.f.day)), { signal });
+        const r = await syncGoggles(await clipRefs(best), shiftGoggles(g, clockErr(a, best.day)), { signal });
         scores.push({ aircraft: a, score: r.score });
       } catch (e) {
         if ((e as Error).name === "AbortError") throw e;

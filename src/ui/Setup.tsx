@@ -74,7 +74,8 @@ async function planFor(project: FileSystemDirectoryHandle, picks: RolePicks): Pr
     } else {
       const [name, create] = guessed(g, k);
       if (!name) slot = { name: null, state: "none", picked: false };
-      else if (create) slot = { name, state: "create", picked: false };
+      else if (create && !(handle = await dirAt(project, name).catch(() => null))) slot = { name, state: "create", picked: false };
+      else if (create) slot = { name, state: "found", picked: false };
       else {
         handle = await dirAt(project, name).catch(() => null);
         slot = { name: name === "." ? project.name : name, state: handle ? "found" : "denied", picked: false };

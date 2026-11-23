@@ -63,4 +63,20 @@ export function medianErr(list: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+// 한 번의 맞춤에서 얻는 시계 오차 표본: 보정 전 원래 고글 시각 기준 (보정된 시각을 쓰면 오차가 쌓임)
+export function clockSample(gogglesStartOrig: number, flightStart: number, offset: number, score: number): number | null {
+  return learnClockErr((gogglesStartOrig - flightStart) / 1000, offset, score);
+}
+
+// 주인 판정용: 그 기체 비행 중 고글 녹화(원래 시각 + 그 기체 오차)와 가장 많이 겹치는 비행
+export function bestFlightFor<F extends { start: number; end: number }>(g: { start: number; duration: number }, flights: F[], errSec: number): F | null {
+  const s = g.start + errSec * 1000;
+  let best: F | null = null, bestOv = 0;
+  for (const f of flights) {
+    const ov = overlapSec(s, s + g.duration * 1000, f.start, f.end);
+    if (ov > bestOv) (best = f), (bestOv = ov);
+  }
+  return best;
+}
+
 export const shiftGoggles = <T extends { start: number }>(g: T, errSec: number): T => ({ ...g, start: g.start + errSec * 1000 });
