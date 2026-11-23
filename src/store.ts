@@ -19,6 +19,7 @@ export interface VideoRecord {
   clipDurations?: number[]; // 원본 클립별 길이 (병합 막대 표시용)
   joinReasons?: ("auto" | "scene" | "manual")[]; // 이음매별 병합 사유
   verified?: { frames: number; sourceFrames: number; duration: number };
+  aircraft?: string; // 기체 id (없으면 결과 파일이 있는 기체)
 }
 
 // 비행별 오버레이 설정 (key = 첫 클립 stem)

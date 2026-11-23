@@ -6,6 +6,7 @@ export interface Clip {
   start: number; // epoch ms (파일명 기준, 로컬 시각)
   duration: number; // 초
   size: number;
+  aircraft?: string; // 기체 id (기체별로 따로 묶는다)
 }
 
 export interface Settings {

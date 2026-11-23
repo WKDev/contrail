@@ -11,6 +11,7 @@ export type DirKey = "raw" | "excluded" | "merged" | "gmerged" | "hud" | "legacy
 export interface FileRef {
   dir: DirKey;
   handle: FileSystemFileHandle;
+  aircraft: string; // 기체 id. 공용 폴더(고글 병합본)는 ""
 }
 
 // 역할별 폴더 (roles.ts). 원본(droneRaw·gogglesRaw·logs·legacy·excluded)은 읽기만
@@ -23,6 +24,7 @@ export interface Index {
   gogglesState: "none" | "ok" | "missing"; // 고글 원본 폴더 상태 (missing = SD 카드가 빠졌거나 권한 없음)
   logs: FlightLog[]; // 비행기록 요약 (드론 원본·FlightRecords 하위 폴더·고글 원본·비행기록 폴더에서 찾음)
   logsState: "none" | "ok" | "missing";
+  aircraft: { id: string; model?: string }[]; // 기체 목록 (모델 = 영상 안 "DJI <모델>")
 }
 
 // 메타데이터(길이) 캐시: 같은 파일을 매번 다시 파싱하지 않도록
@@ -42,7 +44,7 @@ export async function mediaInfo(f: File) {
 }
 
 // 같은 폴더가 여러 역할이면 (예전 구조의 2_ready = 결과 3종, 드론 원본 = 프로젝트 폴더) 한 번만 읽는다
-async function uniqueDirs<T>(list: [T, FileSystemDirectoryHandle | null][]) {
+async function uniqueDirs<T>(list: [T, FileSystemDirectoryHandle | null | undefined][]) {
   const out: [T, FileSystemDirectoryHandle][] = [];
   for (const [k, h] of list) {
     if (!h) continue;
@@ -56,12 +58,35 @@ async function uniqueDirs<T>(list: [T, FileSystemDirectoryHandle | null][]) {
 export async function scanIndex(d: Dirs): Promise<Index> {
   const files = new Map<string, FileRef>();
   const sizes = new Map<string, number>();
-  const where = await uniqueDirs<DirKey>([
-    ["raw", d.droneRaw], ["merged", d.droneMerged], ["gmerged", d.gogglesMerged], ["hud", d.hud],
-    ...d.legacy.map((h) => ["legacy", h] as [DirKey, FileSystemDirectoryHandle]), ["excluded", d.excluded],
+  // 단일 기체 모드의 예전 위치(_sources, 3_uploaded, _excluded)는 그 기체 소속
+  const first = d.aircraft[0]?.id ?? "default";
+  type Where = [DirKey, string];
+  const where = await uniqueDirs<Where>([
+    ...d.aircraft.flatMap((a) => [[["raw", a.id], a.raw], [["merged", a.id], a.merged], [["hud", a.id], a.hud]] as [Where, FileSystemDirectoryHandle][]),
+    [["gmerged", ""], d.gogglesMerged],
+    ...d.legacy.map((h) => [["legacy", first], h] as [Where, FileSystemDirectoryHandle]),
+    [["excluded", first], d.excluded],
   ]);
-  for (const [key, dir] of where) {
-    for (const [name, handle] of Object.entries(await listFiles(dir))) if (!files.has(name)) files.set(name, { dir: key, handle });
+  for (const [[key, aircraft], dir] of where) {
+    for (const [name, handle] of Object.entries(await listFiles(dir))) {
+      const prev = files.get(name);
+      if (!prev) files.set(name, { dir: key, handle, aircraft });
+      else if (prev.aircraft && aircraft && prev.aircraft !== aircraft && !files.has(`${aircraft}/${name}`)) files.set(`${aircraft}/${name}`, { dir: key, handle, aircraft }); // 다른 기체의 같은 이름
+    }
+  }
+  // 기체 모델: 첫 원본 MP4 앞부분의 "DJI <모델>" (FC… 은 카메라 번호라 제외)
+  const aircraftInfo: Index["aircraft"] = [];
+  for (const a of d.aircraft) {
+    let model: string | undefined;
+    const firstRaw = [...files.entries()].find(([n, r]) => r.aircraft === a.id && r.dir === "raw" && /\.mp4$/i.test(n));
+    if (firstRaw) {
+      try {
+        const f = await firstRaw[1].handle.getFile();
+        const text = new TextDecoder("latin1").decode(await f.slice(0, 2_000_000).arrayBuffer());
+        for (const m of text.matchAll(/DJI ([A-Za-z0-9 ]{2,20})\0/g)) if (!/^FC/.test(m[1])) { model = m[1].trim(); break; }
+      } catch {}
+    }
+    aircraftInfo.push({ id: a.id, model });
   }
   const goggles: GogglesInfo[] = [];
   const gogFiles: [string, FileSystemFileHandle, boolean][] = [];
@@ -81,11 +106,13 @@ export async function scanIndex(d: Dirs): Promise<Index> {
   let gogglesState: Index["gogglesState"] = d.gogglesRaw ? "ok" : "none";
   if (d.gogglesRaw) await walk(d.gogglesRaw, 0, true).catch(() => void (gogglesState = "missing"));
   if (d.gogglesExtra) await walk(d.gogglesExtra, 2, false).catch(() => {});
-  for (const [name, handle] of Object.entries(await listFiles(d.droneRaw).catch(() => ({})))) add(name, handle, false);
-  // 드론 원본 안의 FlightRecords 폴더 (기체·고글에서 통째로 복사해 온 경우)
-  try {
-    await walk(await d.droneRaw.getDirectoryHandle("FlightRecords"), 2, false);
-  } catch {}
+  for (const a of d.aircraft) {
+    for (const [name, handle] of Object.entries(await listFiles(a.raw).catch(() => ({})))) add(name, handle, false);
+    // 드론 원본 안의 FlightRecords 폴더 (기체·고글에서 통째로 복사해 온 경우)
+    try {
+      await walk(await a.raw.getDirectoryHandle("FlightRecords"), 2, false);
+    } catch {}
+  }
   let logsState: Index["logsState"] = d.logs ? "ok" : "none";
   if (d.logs) await walk(d.logs, 0, false).catch(() => void (logsState = "missing"));
   const logs: FlightLog[] = [];
@@ -110,7 +137,7 @@ export async function scanIndex(d: Dirs): Promise<Index> {
     } catch {}
   }
   for (const [name, ref] of files) if (/\.mp4$/i.test(name)) sizes.set(name, (await ref.handle.getFile()).size);
-  return { files, sizes, goggles, gogglesState, logs, logsState };
+  return { files, sizes, goggles, gogglesState, logs, logsState, aircraft: aircraftInfo };
 }
 
 export type FlightStatus = "pending" | "done";
@@ -130,6 +157,7 @@ export interface Flight {
   duration: number;
   size: number;
   clips: Clip[];
+  aircraft: string; // 기체 id
   joins: Join[]; // clips.length - 1
   status: FlightStatus;
   record?: VideoRecord;
@@ -172,6 +200,8 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
   // 결과물(기록)이 있는 비행. ref 없음 = 결과 파일이 사라짐
   const doneFlight = async (name: string, rec: VideoRecord, extra: Partial<Flight> = {}): Promise<Flight> => {
     const id = stemOf(rec.sources[0]);
+    const ref = idx.files.get(name);
+    const aircraft = rec.aircraft ?? (ref?.aircraft || idx.files.get(rec.sources[0])?.aircraft || idx.aircraft[0]?.id || "default");
     const durs = rec.clipDurations ?? (await sourceDurations(idx, rec, info));
     const cs: Clip[] = rec.sources.map((src, i) => ({
       name: src, stem: stemOf(src), start: parseStart(src) ?? rec.start, duration: durs[i] ?? rec.duration / rec.sources.length, size: idx.sizes.get(src) ?? 0,
@@ -182,7 +212,7 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
       id, number: 0, day: dayKey(rec.start), start: rec.start, end: rec.start + rec.duration * 1000, duration: rec.duration,
       size: idx.sizes.get(name) ?? cs.reduce((a, c) => a + c.size, 0), clips: cs,
       joins: cs.slice(1).map((c, i) => ({ reason: rec.joinReasons?.[i] ?? "auto", gap: (c.start - cs[i].start) / 1000 - cs[i].duration })),
-      status: "done", record: rec, output: { name, ref: idx.files.get(name) },
+      aircraft, status: "done", record: rec, output: { name, ref },
       overlay: ov ? { name: ov[0], ref: idx.files.get(ov[0]), record: ov[1] } : undefined,
       gogglesOut: go ? { name: go[0], ref: idx.files.get(go[0]), record: go[1] } : undefined,
       youtubeId: rec.youtubeId, overlayYoutubeId: ov?.[1].youtubeId,
@@ -204,72 +234,82 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
     flights.push(await doneFlight(name, rec, present ? {} : { missing: true }));
   }
 
-  // 2) 아직 결과가 없는 원본 = 병합 대기. 예전 _excluded 의 원본은 기본 제외
-  const raw: Clip[] = [];
+  // 2) 아직 결과가 없는 원본 = 병합 대기. 예전 _excluded 의 원본은 기본 제외. 기체별로 따로 묶는다
+  const byAircraft = new Map<string, Clip[]>();
   const overrides: Record<string, Override> = { ...st.overrides };
-  for (const [name, ref] of idx.files) {
+  for (const [key, ref] of idx.files) {
+    const name = ref.handle.name ?? key;
     const m = RAW_RE.exec(name);
     if (!m || !RAW_DIRS.includes(ref.dir) || m[2].toUpperCase() !== "MP4" || used.has(name)) continue;
     try {
       const f = await ref.handle.getFile();
       const meta = await info(f);
-      raw.push({ name, stem: m[1], start: parseStart(name)!, duration: meta.duration, size: f.size });
+      const list = byAircraft.get(ref.aircraft) ?? [];
+      list.push({ name, stem: m[1], start: parseStart(name)!, duration: meta.duration, size: f.size, aircraft: ref.aircraft });
+      byAircraft.set(ref.aircraft, list);
       if (ref.dir === "excluded") overrides[name] = { ...overrides[name], excluded: overrides[name]?.excluded ?? true };
     } catch {}
   }
-  const clips = sortClips(raw);
-  const decisions = decide(clips, st.scores, overrides, s);
-  decisions.forEach((d, i) => {
-    if (i && d.mergePrev && remote[clips[i].name] !== remote[clips[i - 1].name]) {
-      d.mergePrev = false;
-      d.mergeReason = "이미 따로 업로드됨";
-    }
-  });
-  const idxOf = new Map(clips.map((c, i) => [c.name, i]));
-  // 장면 분석 전인 이음매의 양쪽 클립
-  const unsure = new Set<string>();
-  decisions.forEach((d, i) => {
-    if (i && d.mergeReason === "분석 필요") unsure.add(clips[i - 1].name).add(clips[i].name);
-  });
-  for (const g of groupClips(clips, decisions)) {
-    const analyzing = g.some((c) => unsure.has(c.name)) || undefined;
-    const joins: Join[] = g.slice(1).map((c) => {
-      const d = decisions[idxOf.get(c.name)!];
-      return { reason: d.overridden ? "manual" : d.mergeReason === "DJI 자동분할" ? "auto" : "scene", score: d.score, gap: d.gap };
+  const allClips: Clip[] = [];
+  const allDecisions: Decision[] = [];
+  for (const [aircraft, raw] of byAircraft) {
+    const clips = sortClips(raw);
+    const decisions = decide(clips, st.scores, overrides, s);
+    decisions.forEach((d, i) => {
+      if (i && d.mergePrev && remote[clips[i].name] !== remote[clips[i - 1].name]) {
+        d.mergePrev = false;
+        d.mergeReason = "이미 따로 업로드됨";
+      }
     });
-    const duration = g.reduce((a, c) => a + c.duration, 0);
-    const base: VideoRecord = {
-      sources: g.map((c) => c.name), title: defaultTitle(g[0].start), start: g[0].start, duration,
-      clipDurations: g.map((c) => c.duration), joinReasons: joins.map((j) => j.reason),
-    };
-    // 클립 하나 = 병합할 것 없음: 원본이 곧 결과
-    if (g.length === 1) {
-      flights.push(await doneFlight(g[0].name, base, { synthetic: true, analyzing }));
-      continue;
-    }
-    // 기록 없이 병합본만 있으면: 프레임 수가 원본 합과 같을 때만 받아들임 (다시 병합해 중복을 만들지 않게)
-    const mergedName = `${g[0].stem}_merged.MP4`;
-    const mref = idx.files.get(mergedName);
-    let orphan: string | undefined;
-    if (mref && !st.videos[mergedName]) {
-      orphan = mergedName;
-      try {
-        const out = await info(await mref.handle.getFile());
-        let sum = 0;
-        for (const c of g) sum += (await info(await idx.files.get(c.name)!.handle.getFile())).frames;
-        if (out.frames === sum) {
-          const rec: VideoRecord = { ...base, duration: out.duration, verified: { frames: out.frames, sourceFrames: sum, duration: out.duration } };
-          adopt.push({ name: mergedName, rec });
-          flights.push(await doneFlight(mergedName, rec));
-          continue;
-        }
-      } catch {}
-    }
-    flights.push({
-      id: g[0].stem, number: 0, day: dayKey(g[0].start), start: g[0].start, end: g[0].start + (g[g.length - 1].start - g[0].start) + g[g.length - 1].duration * 1000,
-      duration, size: g.reduce((a, c) => a + c.size, 0), clips: g, joins, status: "pending", analyzing, orphan,
-      youtubeId: g.every((c) => remote[c.name] && remote[c.name] === remote[g[0].name]) ? remote[g[0].name] : undefined,
+    allClips.push(...clips);
+    allDecisions.push(...decisions);
+    const idxOf = new Map(clips.map((c, i) => [c.name, i]));
+    // 장면 분석 전인 이음매의 양쪽 클립
+    const unsure = new Set<string>();
+    decisions.forEach((d, i) => {
+      if (i && d.mergeReason === "분석 필요") unsure.add(clips[i - 1].name).add(clips[i].name);
     });
+    const fileOf = (n: string) => idx.files.get(n) ?? idx.files.get(`${aircraft}/${n}`);
+    for (const g of groupClips(clips, decisions)) {
+      const analyzing = g.some((c) => unsure.has(c.name)) || undefined;
+      const joins: Join[] = g.slice(1).map((c) => {
+        const d = decisions[idxOf.get(c.name)!];
+        return { reason: d.overridden ? "manual" : d.mergeReason === "DJI 자동분할" ? "auto" : "scene", score: d.score, gap: d.gap };
+      });
+      const duration = g.reduce((a, c) => a + c.duration, 0);
+      const base: VideoRecord = {
+        sources: g.map((c) => c.name), title: defaultTitle(g[0].start), start: g[0].start, duration,
+        clipDurations: g.map((c) => c.duration), joinReasons: joins.map((j) => j.reason), aircraft,
+      };
+      // 클립 하나 = 병합할 것 없음: 원본이 곧 결과
+      if (g.length === 1) {
+        flights.push(await doneFlight(g[0].name, base, { synthetic: true, analyzing }));
+        continue;
+      }
+      // 기록 없이 병합본만 있으면: 프레임 수가 원본 합과 같을 때만 받아들임 (다시 병합해 중복을 만들지 않게)
+      const mergedName = `${g[0].stem}_merged.MP4`;
+      const mref = fileOf(mergedName);
+      let orphan: string | undefined;
+      if (mref && !st.videos[mergedName]) {
+        orphan = mergedName;
+        try {
+          const out = await info(await mref.handle.getFile());
+          let sum = 0;
+          for (const c of g) sum += (await info(await fileOf(c.name)!.handle.getFile())).frames;
+          if (out.frames === sum) {
+            const rec: VideoRecord = { ...base, duration: out.duration, verified: { frames: out.frames, sourceFrames: sum, duration: out.duration } };
+            adopt.push({ name: mergedName, rec });
+            flights.push(await doneFlight(mergedName, rec));
+            continue;
+          }
+        } catch {}
+      }
+      flights.push({
+        id: g[0].stem, number: 0, day: dayKey(g[0].start), start: g[0].start, end: g[0].start + (g[g.length - 1].start - g[0].start) + g[g.length - 1].duration * 1000,
+        duration, size: g.reduce((a, c) => a + c.size, 0), clips: g, joins, status: "pending", analyzing, orphan, aircraft,
+        youtubeId: g.every((c) => remote[c.name] && remote[c.name] === remote[g[0].name]) ? remote[g[0].name] : undefined,
+      });
+    }
   }
 
   // 날짜별 번호
@@ -282,11 +322,11 @@ export async function buildLibrary(idx: Index, st: State, s: Settings, info: Inf
   }
 
   const excluded: Library["excluded"] = [];
-  clips.forEach((c, i) => {
-    if (decisions[i].excluded) excluded.push({ name: c.name, dir: idx.files.get(c.name)!.dir, duration: c.duration, reason: decisions[i].excludeReason });
+  allClips.forEach((c, i) => {
+    if (allDecisions[i].excluded) excluded.push({ name: c.name, dir: idx.files.get(c.name)?.dir ?? "raw", duration: c.duration, reason: allDecisions[i].excludeReason });
   });
 
-  return { flights, pendingClips: clips, decisions, excluded, adopt };
+  return { flights, pendingClips: allClips, decisions: allDecisions, excluded, adopt };
 }
 
 async function sourceDurations(idx: Index, rec: VideoRecord, info: Info) {

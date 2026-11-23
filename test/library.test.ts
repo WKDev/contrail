@@ -25,8 +25,11 @@ function fakeDir(name: string, tree: Tree = {}, opts: { broken?: boolean } = {})
   };
   return h;
 }
+// 파일 앞부분 내용 (기체 모델 읽기용)
+const contents: Record<string, string> = {};
 function fakeFile(name: string, size: number) {
-  return { kind: "file", name, getFile: async () => ({ name, size, lastModified: 0 }) };
+  const bytes = new TextEncoder().encode(contents[name] ?? "");
+  return { kind: "file", name, getFile: async () => ({ name, size, lastModified: 0, slice: (a: number, b: number) => ({ arrayBuffer: async () => bytes.slice(a, b).buffer }) }) };
 }
 
 // 길이·프레임: 이름으로 정함 (기본 60초, 30fps)
@@ -39,16 +42,16 @@ const B = "DJI_20261030174632_0018_D";
 meta[`${A}.MP4`] = { duration: 460, frames: 100 };
 meta[`${B}.MP4`] = { duration: 30, frames: 200 };
 
-function dirs(p: { raw?: Tree; merged?: Tree; gmerged?: Tree; hud?: Tree; legacy?: Tree[]; excluded?: Tree; goggles?: FileSystemDirectoryHandle | null }): Dirs {
-  const project = fakeDir("Avata2");
+type AC = { raw?: Tree; merged?: Tree; hud?: Tree };
+const ac = (id: string, p: AC) => ({ id, raw: fakeDir(`${id}/raw`, p.raw), merged: fakeDir(`${id}/merged`, p.merged), hud: fakeDir(`${id}/hud`, p.hud) });
+function dirs(p: AC & { gmerged?: Tree; legacy?: Tree[]; excluded?: Tree; goggles?: FileSystemDirectoryHandle | null; more?: Record<string, AC> }): Dirs {
+  const project = fakeDir("DroneArchive");
   return {
     project,
-    droneRaw: fakeDir("aircraft_raw", p.raw),
+    aircraft: [ac("avata2", p), ...Object.entries(p.more ?? {}).map(([id, x]) => ac(id, x))],
     gogglesRaw: p.goggles ?? null,
     gogglesExtra: null,
-    droneMerged: fakeDir("aircraft_merged", p.merged),
-    gogglesMerged: fakeDir("google_merged", p.gmerged),
-    hud: fakeDir("hud", p.hud),
+    gogglesMerged: fakeDir("goggles_merged", p.gmerged),
     logs: null,
     legacy: (p.legacy ?? []).map((t, i) => fakeDir(`legacy${i}`, t)),
     excluded: p.excluded ? fakeDir("_excluded", p.excluded) : null,
@@ -116,7 +119,7 @@ test("_sources 에 옮겨진 원본도 찾는다 (예전 구조)", async () => {
   const ready = fakeDir("2_ready", { [`${A}_merged.MP4`]: 18 });
   const project = fakeDir("old");
   const d: Dirs = {
-    project, droneRaw: project, gogglesRaw: null, gogglesExtra: null, droneMerged: ready, gogglesMerged: ready, hud: ready, logs: null,
+    project, aircraft: [{ id: "default", raw: project, merged: ready, hud: ready }], gogglesRaw: null, gogglesExtra: null, gogglesMerged: ready, logs: null,
     legacy: [fakeDir("_sources", { [`${A}.MP4`]: 7, [`${B}.MP4`]: 7 })], excluded: null,
   };
   const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`]) }));
@@ -166,7 +169,7 @@ test("예전 3_uploaded 의 병합본 + _sources 원본 = 완료", async () => {
   const project = fakeDir("old");
   const ready = fakeDir("2_ready");
   const d: Dirs = {
-    project, droneRaw: project, gogglesRaw: null, gogglesExtra: null, droneMerged: ready, gogglesMerged: ready, hud: ready, logs: null,
+    project, aircraft: [{ id: "default", raw: project, merged: ready, hud: ready }], gogglesRaw: null, gogglesExtra: null, gogglesMerged: ready, logs: null,
     legacy: [fakeDir("_sources", { [`${A}.MP4`]: 7, [`${B}.MP4`]: 7 }), fakeDir("3_uploaded", { [`${A}_merged.MP4`]: 18 })], excluded: null,
   };
   const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { youtubeId: "yt" }) }));
@@ -179,7 +182,7 @@ test("예전 3_uploaded 의 병합본 + _sources 원본 = 완료", async () => {
 test("결과 파일이 없고 원본이 _sources 에만 있으면 missing (사라지지 않음)", async () => {
   const project = fakeDir("old");
   const d: Dirs = {
-    project, droneRaw: project, gogglesRaw: null, gogglesExtra: null, droneMerged: fakeDir("2_ready"), gogglesMerged: fakeDir("2_ready"), hud: fakeDir("2_ready"), logs: null,
+    project, aircraft: [{ id: "default", raw: project, merged: fakeDir("2_ready"), hud: fakeDir("2_ready") }], gogglesRaw: null, gogglesExtra: null, gogglesMerged: fakeDir("2_ready"), logs: null,
     legacy: [fakeDir("_sources", { [`${A}.MP4`]: 7, [`${B}.MP4`]: 7 })], excluded: null,
   };
   const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`], { youtubeId: "yt" }) }));
@@ -189,7 +192,7 @@ test("결과 파일이 없고 원본이 _sources 에만 있으면 missing (사�
 
 test("병합본 폴더를 드론 원본과 같은 폴더로 골라도 완료로 본다", async () => {
   const same = fakeDir("aircraft_raw", { [`${A}.MP4`]: 9, [`${B}.MP4`]: 9, [`${A}_merged.MP4`]: 18 });
-  const d: Dirs = { ...dirs({}), droneRaw: same, droneMerged: same };
+  const d: Dirs = { ...dirs({}), aircraft: [{ id: "avata2", raw: same, merged: same, hud: fakeDir("hud") }] };
   const l = await lib(d, withVideos({ [`${A}_merged.MP4`]: rec([`${A}.MP4`, `${B}.MP4`]) }));
   assert.equal(l.flights.length, 1);
   assert.equal(l.flights[0].status, "done");
@@ -210,4 +213,30 @@ test("프레임 수가 안 맞는 기록 없는 병합본은 orphan 으로 표�
   assert.equal(l.flights[0].status, "pending");
   assert.equal(l.flights[0].orphan, `${A}_merged.MP4`);
   delete meta[`${A}_merged.MP4`];
+});
+
+// ---- 기체 여러 대 ----
+test("기체가 다르면 시간이 붙어 있어도 따로 묶는다", async () => {
+  const d = dirs({ raw: { [`${A}.MP4`]: 9 }, more: { pavopro2: { raw: { [`${B}.MP4`]: 9 } } } });
+  const l = await lib(d, emptyState());
+  assert.equal(l.flights.length, 2);
+  assert.deepEqual(l.flights.map((f) => f.aircraft).sort(), ["avata2", "pavopro2"]);
+  assert.ok(l.flights.every((f) => f.clips.length === 1));
+});
+
+test("기록의 기체는 결과 파일이 있는 기체", async () => {
+  const X = "DJI_20261115123631_0001_D", Y = "DJI_20261115124400_0002_D";
+  const d = dirs({ more: { pavopro2: { merged: { [`${X}_merged.MP4`]: 18 } } } });
+  const l = await lib(d, withVideos({ [`${X}_merged.MP4`]: rec([`${X}.MP4`, `${Y}.MP4`]) }));
+  assert.equal(l.flights.length, 1);
+  assert.equal(l.flights[0].aircraft, "pavopro2");
+});
+
+test("기체 모델을 읽는다", async () => {
+  const X = "DJI_20261115123631_0001_D";
+  contents[`${X}.MP4`] = "xx\0DJI FC8885-\0yyDJI O4P\0zz";
+  const ix = await scanIndex(dirs({ raw: { [`${X}.MP4`]: 9 } }));
+  assert.equal(ix.aircraft[0].id, "avata2");
+  assert.equal(ix.aircraft[0].model, "O4P");
+  delete contents[`${X}.MP4`];
 });
