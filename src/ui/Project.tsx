@@ -233,7 +233,7 @@ export function Project({ f }: { f: Flight }) {
                 )}
                 <ClipOrder f={f} focus={focus} />
                 <p class="note"><ShieldCheck size={14} strokeWidth={2} /> {t("merge.lossless")}</p>
-                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `2_ready/${f.output.name}` })}</p>}
+                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `${(f.output.ref?.dir === "raw" ? app.dirs?.droneRaw.name : app.dirs?.droneMerged.name) ?? ""}/${f.output.name}` })}</p>}
               </>
             )}
 
@@ -761,9 +761,9 @@ function GogglesPanel({ f, job }: { f: Flight; job: Job | null }) {
             </>
           ) : (
             <>
-              <span><b>{t("gog.none")}</b><br /><small>{app.dirs?.gogglesExt ? t("gog.noneInFolder", { name: app.dirs.gogglesExt.name }) : t("gog.noneHint")}</small></span>
+              <span><b>{t("gog.none")}</b><br /><small>{app.dirs?.gogglesRaw ? t("gog.noneInFolder", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}</small></span>
               <div class="gog-add">
-                {!app.dirs?.gogglesExt && <button class="soft-btn sm" onClick={app.linkGogglesFolder} disabled={!!app.job}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
+                {!app.dirs?.gogglesRaw && <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
                 <button class="text-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}>{t("gog.fromFiles")}</button>
               </div>
             </>
@@ -780,12 +780,12 @@ function LogSummary({ f }: { f: Flight }) {
   const app = useApp();
   const l = app.logOf(f);
   if (!l) {
-    if (!app.idx?.logs.length && !app.dirs?.logsExt)
+    if (!app.idx?.logs.length && !app.dirs?.logs)
       return (
         <section class="logsum neu-inset empty">
           <ScrollText size={16} strokeWidth={1.75} />
           <span class="grow small">{t("flog.noneHint")}</span>
-          <button class="soft-btn sm" onClick={app.linkLogsFolder} disabled={!!app.job}><FolderOpen size={14} /> {t("flog.pick")}</button>
+          <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={14} /> {t("flog.pick")}</button>
         </section>
       );
     return <p class="note"><ScrollText size={14} strokeWidth={2} /> {t("flog.noMatch")}</p>;

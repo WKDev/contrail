@@ -34,8 +34,8 @@ export function GogglesView() {
   );
   return (
     <>
-      <ViewHead title={t("nav.goggles")} hint={app.dirs?.gogglesExt ? t("gog.viewHintLinked", { name: app.dirs.gogglesExt.name }) : t("gog.noneHint")}>
-        <button class="soft-btn" onClick={app.linkGogglesFolder} disabled={!!app.job}><FolderOpen size={15} /> {app.dirs?.gogglesExt ? t("gfolder.change") : t("gfolder.pick")}</button>
+      <ViewHead title={t("nav.goggles")} hint={app.dirs?.gogglesRaw ? t("gog.viewHintLinked", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}>
+        <button class="soft-btn" onClick={() => app.setShowSetup(true)} disabled={!!app.job}><FolderOpen size={15} /> {app.dirs?.gogglesRaw ? t("gfolder.change") : t("gfolder.pick")}</button>
         <button class="soft-btn" onClick={() => app.addGoggles("folder")} disabled={!!app.job} title={t("gog.fromSdHint")}><Glasses size={15} /> {t("gog.fromSd")}</button>
         <button class="soft-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}><Plus size={15} /> {t("gog.fromFiles")}</button>
       </ViewHead>
@@ -77,9 +77,7 @@ export function ExcludedView() {
   const list = app.lib?.excluded ?? [];
   return (
     <>
-      <ViewHead title={t("excluded.title")} hint={t("excluded.hint")}>
-        <button class="soft-btn" onClick={app.tidyExcluded} disabled={!list.some((x) => x.dir === "root") || !!app.job}>{t("excluded.tidy")}</button>
-      </ViewHead>
+      <ViewHead title={t("excluded.title")} hint={t("excluded.hint")} />
       <div class="scroll">
         {!list.length ? (
           <div class="empty"><EyeOff size={36} strokeWidth={1.4} /><p>{t("empty.noneHere")}</p></div>
@@ -99,7 +97,7 @@ export function ExcludedView() {
                   </div>
                   <button
                     class="soft-btn sm"
-                    onClick={() => (x.dir === "excluded" ? app.restoreExcluded(x.name) : app.setOverride(x.name, "excluded", false))}
+                    onClick={() => app.setOverride(x.name, "excluded", false)}
                   >
                     <RotateCcw size={14} /> {t("excluded.restore")}
                   </button>
