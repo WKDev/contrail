@@ -8,11 +8,12 @@ import { grayFrame } from "./media.ts";
 import { continuity } from "./sim.ts";
 import { DEFAULT_SETTINGS, defaultTitle, pairKey, type Settings } from "./plan.ts";
 import {
-  defaultPrefs, emptyState, ensurePermission, exists, flushState, loadProject, mergeRecord, readState, saveProject, telemetryFile, writeState,
+  emptyState, ensurePermission, exists, flushState, loadProject, mergeRecord, prefsDefault, readState, saveProject, telemetryFile, writeState,
   layoutOf, linksOf, type FlightPrefs, type GogglesLink, type Layout, type SavedProject, type State, type VideoRecord,
 } from "./store.ts";
 import { buildLibrary, flightTitle, mediaInfo, proxyRef, scanIndex, type Dirs, type Flight, type Index, type Library } from "./library.ts";
-import { guessFor, READONLY_ROLES, resolveDirs, type Role, type RolePicks } from "./roles.ts";
+import { guessFor, isReadonlyPick, migratePicks, resolveDirs, type AircraftDirs, type PickKey, type RolePicks } from "./roles.ts";
+import { learnClockErr, medianErr, ownerOfGoggles, shiftGoggles, type Owner } from "./assign.ts";
 import { stepsOf as computeSteps, stepTodo as computeTodo, type Steps } from "./steps.ts";
 import { concatTelemetry, fromJSON, readTelemetry, toJSON, type Telemetry } from "./telemetry.ts";
 import { renderOverlay } from "./render.ts";
@@ -107,9 +108,17 @@ export interface AppCtx {
   showSetup: boolean;
   setShowSetup: (b: boolean) => void;
   openProject: (project: FileSystemDirectoryHandle, picks: RolePicks) => Promise<void>;
-  pickDir: (role: Role | "project") => Promise<FileSystemDirectoryHandle | null>;
-  setRole: (role: Role, h: FileSystemDirectoryHandle | null) => Promise<void>;
-  reconnect: (role: Role) => Promise<void>;
+  pickDir: (role: PickKey | "project") => Promise<FileSystemDirectoryHandle | null>;
+  setRole: (role: PickKey, h: FileSystemDirectoryHandle | null) => Promise<void>;
+  reconnect: (role: PickKey) => Promise<void>;
+  dirOf: (f: Flight) => AircraftDirs;
+  hasTelemetry: Record<string, boolean>;
+  ownerOf: (file: string) => Owner | undefined;
+  setGogglesOwner: (file: string, aircraft: string | null) => void;
+  linkGogglesTo: (file: string, flightId: string) => Promise<void>;
+  aircraftFilter: string | null;
+  setAircraftFilter: (a: string | null) => void;
+  layoutFor: (aircraft: string) => Layout;
   refresh: () => Promise<void>;
   setOverride: (name: string, key: "excluded" | "mergePrev", v: boolean | undefined) => void;
   prefsOf: (id: string) => FlightPrefs;
@@ -122,12 +131,11 @@ export interface AppCtx {
   seam: (a: Flight["clips"][number], b: Flight["clips"][number]) => Promise<[string, string]>;
   telemetryOf: (f: Flight) => Promise<Telemetry | null>;
   previewFile: (f: Flight) => Promise<{ file: File; kind: "overlay" | "output" | "proxy" } | null>;
-  gogglesOf: (f: Flight) => { links: { link: GogglesLink; info: GogglesInfo | null }[]; candidates: GogglesInfo[] };
+  gogglesOf: (f: Flight) => { links: { link: GogglesLink; info: GogglesInfo | null }[]; candidates: GogglesInfo[]; ambiguous: GogglesInfo[] };
   syncGogglesFor: (f: Flight, list: GogglesInfo[]) => Promise<void>;
   nudgeGoggles: (f: Flight, file: string, delta: number) => void;
   unlinkGoggles: (f: Flight) => void;
-  layout: Layout;
-  setLayout: (l: Layout | null) => void;
+  setLayout: (l: Layout | null, aircraft: string) => void;
   addGoggles: (from?: "folder" | "files") => Promise<void>;
   ytLogin: () => Promise<void>;
   ytSync: () => Promise<void>;
@@ -145,6 +153,9 @@ export function App() {
   const [dirs, setDirs] = useState<Dirs | null>(null);
   const [savedProject, setSavedProject] = useState<SavedProject | null>(null);
   const [showSetup, setShowSetup] = useState(false);
+  const [hasTelemetry, setHasTelemetry] = useState<Record<string, boolean>>({});
+  const [aircraftFilter, setAircraftFilter] = useState<string | null>(null);
+  const libRef = useRef<Library | null>(null);
   const [batch, setBatch] = useState<AppCtx["batch"]>(null);
   const [idx, setIdx] = useState<Index | null>(null);
   const [lib, setLib] = useState<Library | null>(null);
@@ -195,7 +206,7 @@ export function App() {
   };
 
   useEffect(() => {
-    loadProject().then((v) => v && setSavedProject(v));
+    loadProject().then((v) => v && setSavedProject({ ...v, picks: migratePicks(v.picks as Record<string, FileSystemDirectoryHandle | null>) }));
     // 개발용: ?opfs → 브라우저 내부 저장소(OPFS)를 폴더로 열기 (헤드리스 검증용, 배포 빌드에서 제거됨)
     if (import.meta.env.DEV && new URLSearchParams(location.search).has("opfs")) {
       const gog = new URLSearchParams(location.search).get("gog"); // ?opfs&gog=a/b → OPFS 하위 폴더를 고글 폴더로
@@ -247,7 +258,7 @@ export function App() {
       }
       // 지난번에 브라우저가 꺼지는 등으로 남은 임시 파일 정리 (작업 중이 아닐 때만)
       if (reload && !abortRef.current)
-        for (const dir of [d.droneMerged, d.gogglesMerged, d.hud])
+        for (const dir of [...d.aircraft.flatMap((a) => [a.merged, a.hud]), d.gogglesMerged])
           for await (const [name] of (dir as any).entries() as AsyncIterable<[string]>)
             if (name.endsWith(".part")) await dir.removeEntry(name).catch(() => {});
       const ix = await scanIndex(d);
@@ -266,6 +277,7 @@ export function App() {
 
   // 기록 없이 찾은 병합본(프레임 수 확인됨)은 상태에 기록해 둔다
   function applyLib(l: Library) {
+    libRef.current = l;
     setLib(l);
     if (l.adopt.length) update((s) => l.adopt.forEach((a) => (s.videos[a.name] ??= a.rec)));
   }
@@ -276,10 +288,11 @@ export function App() {
   }, [state.overrides, state.scores, state.videos, state.remote, config.minDuration, config.maxGap, config.simMax]);
 
   // 폴더 고르기 창. 닫으면 null. 원본 역할은 읽기, 나머지는 쓰기 권한
-  async function pickDir(role: Role | "project") {
+  async function pickDir(role: PickKey | "project") {
     try {
-      const mode = role !== "project" && READONLY_ROLES.includes(role) ? "read" : "readwrite";
-      return (await (window as any).showDirectoryPicker({ id: `contrail-${role}`, mode })) as FileSystemDirectoryHandle;
+      const mode = role !== "project" && isReadonlyPick(role) ? "read" : "readwrite";
+      const id = `contrail-${role.replace(/[^a-z0-9_-]/gi, "-")}`.slice(0, 32);
+      return (await (window as any).showDirectoryPicker({ id, mode })) as FileSystemDirectoryHandle;
     } catch (e) {
       if ((e as Error).name !== "AbortError") say(String(e), true);
       return null;
@@ -294,9 +307,9 @@ export function App() {
     if (isBusy()) return;
     try {
       if (!(await ensurePermission(project))) return say(t("err.permission"), true);
-      for (const [role, h] of Object.entries(picks) as [Role, FileSystemDirectoryHandle | null][]) {
+      for (const [role, h] of Object.entries(picks) as [PickKey, FileSystemDirectoryHandle | null][]) {
         if (!h) continue;
-        if (READONLY_ROLES.includes(role)) await readAccess(h);
+        if (isReadonlyPick(role)) await readAccess(h);
         else if (!(await ensurePermission(h).catch(() => false))) return say(t("err.permission"), true);
       }
       const guess = await guessFor(project, !!picks.gogglesRaw);
@@ -315,13 +328,15 @@ export function App() {
     }
   }
 
-  async function setRole(role: Role, h: FileSystemDirectoryHandle | null) {
+  async function setRole(role: PickKey, h: FileSystemDirectoryHandle | null) {
     if (!savedProject) return;
     await openProject(savedProject.project, { ...savedProject.picks, [role]: h });
   }
 
-  async function reconnect(role: Role) {
-    const h = dirsRef.current?.[role as keyof Dirs] as FileSystemDirectoryHandle | null | undefined;
+  async function reconnect(role: PickKey) {
+    const d = dirsRef.current;
+    const m = /^aircraft:(.+):(raw|merged|hud)$/.exec(role);
+    const h = m ? d?.aircraft.find((a) => a.id === m[1])?.[m[2] as "raw" | "merged" | "hud"] : role === "gogglesRaw" ? d?.gogglesRaw : role === "logs" ? d?.logs : d?.gogglesMerged;
     if (!h) return;
     if (!(await readAccess(h))) return say(t("gfolder.denied"), true);
     await scan(dirsRef.current, false);
@@ -376,6 +391,32 @@ export function App() {
 
   const selected = useMemo(() => lib?.flights.find((f) => f.id === selectedId) ?? null, [lib, selectedId]);
 
+  // 비행이 속한 기체의 폴더 (없으면 첫 기체)
+  const dirOf = (f: Flight): AircraftDirs => {
+    const d = dirsRef.current!;
+    return d.aircraft.find((a) => a.id === f.aircraft) ?? d.aircraft[0];
+  };
+
+  // 기체별 비행 데이터 유무: 첫 원본 클립에 유효한 GPS 또는 자세가 있는지 (기체마다 1회)
+  useEffect(() => {
+    if (!idx) return;
+    let cancelled = false;
+    (async () => {
+      for (const a of idx.aircraft) {
+        if (cancelled || hasTelemetry[a.id] !== undefined) continue;
+        const first = [...idx.files.values()].find((r) => r.aircraft === a.id && r.dir === "raw" && /\.mp4$/i.test(r.handle.name));
+        if (!first) continue;
+        let ok = false;
+        try {
+          const tel = await readTelemetry(fileReader(await first.handle.getFile()));
+          ok = tel.t.length > 0 && (tel.lat.some((v) => !Number.isNaN(v) && v !== 0) || tel.pitch.some((v) => v !== 0) || tel.roll.some((v) => v !== 0));
+        } catch {}
+        if (!cancelled) setHasTelemetry((m) => ({ ...m, [a.id]: ok }));
+      }
+    })();
+    return () => void (cancelled = true);
+  }, [idx]);
+
   // ---------- 비행 데이터 ----------
   const fileOf = async (name: string) => idx?.files.get(name)?.handle.getFile() ?? null;
 
@@ -393,7 +434,7 @@ export function App() {
         if (f.output) {
           try {
             const sideName = telemetryFile(f.output.name);
-            const sideHandle = await d.droneMerged.getFileHandle(sideName).catch(() => ix.files.get(sideName)?.handle);
+            const sideHandle = await dirOf(f).merged.getFileHandle(sideName).catch(() => ix.files.get(sideName)?.handle);
             if (!sideHandle) throw new DOMException("", "NotFoundError");
             const side = await sideHandle.getFile();
             const tel = fromJSON(await side.text());
@@ -458,11 +499,16 @@ export function App() {
   }
 
   // ---------- 파이프라인: 병합 → 검증 → 오버레이 ----------
-  const prefsOf = (id: string) => ({ ...defaultPrefs(), ...stateRef.current.prefs?.[id] });
+  // 기본값은 기체에 따라: 비행 데이터가 없는 기체는 계기·지도 끔
+  const basePrefs = (id: string) => {
+    const a = libRef.current?.flights.find((f) => f.id === id)?.aircraft;
+    return prefsDefault(a ? hasTelemetry[a] ?? true : true);
+  };
+  const prefsOf = (id: string) => ({ ...basePrefs(id), ...stateRef.current.prefs?.[id] });
   const setPrefs = (id: string, patch: Partial<FlightPrefs>) =>
     update((s) => {
       s.prefs ??= {};
-      s.prefs[id] = { ...defaultPrefs(), ...s.prefs[id], ...patch };
+      s.prefs[id] = { ...basePrefs(id), ...s.prefs[id], ...patch };
     });
 
   // 드론 병합: 원본은 읽기만 하고 드론 병합본 폴더에 쓴다 (클립 2개 이상인 비행만)
@@ -483,7 +529,7 @@ export function App() {
     };
     const name = `${f.id}_merged.MP4`;
     const tmp = `${name}.part`;
-    const out = d.droneMerged;
+    const out = dirOf(f).merged;
     // 기록 없는 같은 이름 병합본은 사용자가 둔 파일일 수 있으니 덮어쓰지 않는다
     if ((await exists(out, name)) && !stateRef.current.videos[name]) throw new Error(t("err.orphan", { name }));
     await out.removeEntry(tmp).catch(() => {});
@@ -519,12 +565,12 @@ export function App() {
       await w2.write(toJSON(concatTelemetry(tels, f.clips.map((c) => c.duration))));
       await w2.close();
     } catch {}
-    return { name, rec: { ...base, duration: tr.duration, verified } };
+    return { name, rec: { ...base, duration: tr.duration, verified, aircraft: f.aircraft } };
   }
 
   // 병합본(드론 병합본 폴더) 또는 원본(클립 하나짜리) 파일 핸들
-  async function outputHandle(name: string) {
-    const h = await dirsRef.current!.droneMerged.getFileHandle(name).catch(() => idxRef.current?.files.get(name)?.handle);
+  async function outputHandle(name: string, f: Flight) {
+    const h = await dirOf(f).merged.getFileHandle(name).catch(() => idxRef.current?.files.get(name)?.handle ?? idxRef.current?.files.get(`${f.aircraft}/${name}`)?.handle);
     if (!h) throw new Error(t("err.fileGone"));
     return h;
   }
@@ -532,12 +578,12 @@ export function App() {
   async function doOverlay(f: Flight, outName: string, outRec: VideoRecord, signal: AbortSignal) {
     const d = dirsRef.current!;
     const p = prefsOf(f.id);
-    const handle = await outputHandle(outName);
+    const handle = await outputHandle(outName, f);
     const src = await handle.getFile();
-    const fl: Flight = { ...f, output: { name: outName, ref: { dir: f.clips.length > 1 ? "merged" : "raw", handle } } };
+    const fl: Flight = { ...f, output: { name: outName, ref: { dir: f.clips.length > 1 ? "merged" : "raw", handle, aircraft: f.aircraft } } };
     const tel = p.instruments || p.map ? await telemetryOf(fl).catch(() => null) : null; // 비행 데이터가 없으면 고글 OSD 만
     const g = gogglesOf(f);
-    const layout = layoutOf(stateRef.current);
+    const layout = layoutOf(stateRef.current, f.aircraft);
     // 고글 파일마다 화면 배율·고정 OSD 통계
     const segs = [];
     for (const x of g.links.filter((x) => x.info)) {
@@ -550,7 +596,7 @@ export function App() {
     // 임시 파일에 만들고, 검증까지 끝나면 기존 HUD 영상과 바꾼다 (실패해도 기존 영상은 그대로)
     const name = `${f.id}_hud.MP4`;
     const tmp = `${name}.part`;
-    const out = d.hud;
+    const out = dirOf(f).hud;
     await out.removeEntry(tmp).catch(() => {});
     const w = await (await out.getFileHandle(tmp, { create: true })).createWritable();
     setJob({ flightId: f.id, phase: "render", done: 0, total: 1, started: Date.now() });
@@ -585,7 +631,7 @@ export function App() {
     }
     // 클립 하나짜리(원본이 결과)는 기록이 아직 없으면 같이 저장
     if (f.synthetic) update((s) => void (s.videos[outName] ??= outRec));
-    update((s) => (s.videos[name] = { ...outRec, title: `${outRec.title} (HUD)`, variant: "hud", youtubeId: undefined, playlistId: undefined, uploadedAt: undefined }));
+    update((s) => (s.videos[name] = { ...outRec, aircraft: f.aircraft, title: `${outRec.title} (HUD)`, variant: "hud", youtubeId: undefined, playlistId: undefined, uploadedAt: undefined }));
   }
 
   // 고글 녹화 병합: 비행에 연결된 고글 파일들을 시간순으로 무손실 이어붙임 (프레임 수 검증)
@@ -635,7 +681,7 @@ export function App() {
   const gogglesFacts = (f: Flight) => {
     const g = gogglesOf(f);
     const linked = g.links.filter((x) => x.info).sort((a, b) => a.link.offset - b.link.offset).map((x) => x.link.file);
-    return { linked, candidates: g.candidates.length, mergedSources: f.gogglesOut?.record.gogglesSources };
+    return { linked, candidates: g.candidates.length + g.ambiguous.length, mergedSources: f.gogglesOut?.record.gogglesSources };
   };
   const stepsOf = (f: Flight) => computeSteps(f, gogglesFacts(f), prefsOf(f.id));
   const todoOf = (l: Library | null) => computeTodo((l?.flights ?? []).map((f) => ({ f, s: stepsOf(f) })));
@@ -653,6 +699,8 @@ export function App() {
     const name = out?.name ?? f.output?.name;
     const rec = out?.rec ?? f.record;
     if (step === "goggles") {
+      // 주인 기체가 애매한 고글 녹화부터: 후보 기체마다 화면 내용 점수로 판정
+      for (const a of gogglesOf(f).ambiguous) await resolveOwner(a, signal);
       const g = gogglesOf(f);
       if (g.candidates.length) {
         setJob({ flightId: f.id, phase: "goggles", done: 0, total: g.candidates.length * 2, started: Date.now() });
@@ -737,33 +785,109 @@ export function App() {
     if (blocked) say(t("step.hudBlocked", { n: blocked }), true);
   }
 
-  // ---------- 고글 ----------
+  // ---------- 고글 (공용: 녹화마다 주인 기체 하나) ----------
+  const clockErr = (aircraft: string, day: string) => medianErr(stateRef.current.clock?.[aircraft]?.[day] ?? []);
+  function owners() {
+    const st = stateRef.current;
+    const flights = libRef.current?.flights ?? [];
+    const links: Record<string, { file: string }[]> = {};
+    for (const f of flights) links[f.id] = linksOf(st, f.id);
+    return ownerOfGoggles(idxRef.current?.goggles ?? [], flights, links, clockErr, st.gogglesOwner ?? {});
+  }
+  const ownerOf = (file: string) => owners().get(file);
+
   function gogglesOf(f: Flight) {
-    const list = idx?.goggles ?? [];
+    const list = idxRef.current?.goggles ?? idx?.goggles ?? [];
     const links = linksOf(stateRef.current, f.id).map((link) => ({ link, info: list.find((g) => g.name === link.file) ?? null }));
     const linked = new Set(links.map((x) => x.link.file));
-    const candidates = matchGogglesForClips(f.clips, list).filter((g) => !linked.has(g.name));
-    return { links, candidates };
+    const own = owners();
+    const err = clockErr(f.aircraft, f.day);
+    // 이 기체 녹화만, 그 기체 시계 오차로 시각을 보정해 클립별 시간 겹침으로 찾는다
+    const mine = list.filter((g) => own.get(g.name)?.aircraft === f.aircraft && !linked.has(g.name)).map((g) => shiftGoggles(g, err));
+    const candidates = matchGogglesForClips(f.clips, mine);
+    const ambiguous = matchGogglesForClips(f.clips, list.filter((g) => own.get(g.name)?.by === "ambiguous" && own.get(g.name)!.candidates.includes(f.aircraft)).map((g) => shiftGoggles(g, err)));
+    return { links, candidates, ambiguous };
   }
 
-  // 한 비행의 고글 후보들과 시간 맞추기 (결과는 바로 연결 정보에 저장)
-  async function syncCore(f: Flight, list: GogglesInfo[], signal: AbortSignal, onStage?: (k: number) => void) {
-    const ix = idxRef.current;
-    if (!ix) return;
+  async function clipRefs(f: Flight) {
+    const ix = idxRef.current!;
     const clips = [];
     for (const c of f.clips) {
       const ref = proxyRef(ix, c.stem);
       if (!ref) throw new Error(t("tel.missing", { name: c.stem }));
       clips.push({ file: await ref.handle.getFile(), start: c.start, duration: c.duration });
     }
+    return clips;
+  }
+
+  // 한 비행의 고글 후보들과 시간 맞추기 (결과는 바로 연결 정보에 저장, 확실하면 기체 시계 오차도 배움)
+  async function syncCore(f: Flight, list: GogglesInfo[], signal: AbortSignal, onStage?: (k: number) => void, search?: number) {
+    if (!idxRef.current) return;
+    const clips = await clipRefs(f);
     for (const [i, g] of list.entries()) {
-      const r = await syncGoggles(clips, g, { signal, onStage: (s) => onStage?.(i * 2 + (s === "flight" ? 0 : 1)) });
+      const r = await syncGoggles(clips, g, { signal, search, onStage: (s) => onStage?.(i * 2 + (s === "flight" ? 0 : 1)) });
+      const extra = learnClockErr(r.coarse, r.offset, r.score);
       update((s) => {
         s.goggles ??= {};
         const links = linksOf(s, f.id).filter((l) => l.file !== g.name);
         links.push({ file: g.name, offset: Math.round(r.offset * 1000) / 1000, score: Math.round(r.score * 1000) / 1000 });
         s.goggles[f.id] = links.sort((a, b) => a.offset - b.offset);
+        if (extra !== null) {
+          const total = clockErr(f.aircraft, f.day) + extra;
+          s.clock ??= {};
+          s.clock[f.aircraft] ??= {};
+          (s.clock[f.aircraft][f.day] ??= []).push(Math.round(total * 1000) / 1000);
+        }
       });
+    }
+  }
+
+  // 주인 기체가 애매한 녹화: 후보 기체마다 가장 많이 겹치는 비행과 맞춰 점수가 높은 기체로 (차이 0.1 이상일 때만)
+  async function resolveOwner(g: GogglesInfo, signal: AbortSignal) {
+    const own = ownerOf(g.name);
+    if (own?.by !== "ambiguous") return;
+    const scores: { aircraft: string; score: number }[] = [];
+    for (const a of own.candidates) {
+      const fs = (libRef.current?.flights ?? []).filter((f) => f.aircraft === a);
+      const best = fs
+        .map((f) => ({ f, ov: Math.max(0, Math.min(f.end, g.start + g.duration * 1000) - Math.max(f.start, g.start)) }))
+        .sort((x, y) => y.ov - x.ov)[0];
+      if (!best?.ov) continue;
+      try {
+        const r = await syncGoggles(await clipRefs(best.f), shiftGoggles(g, clockErr(a, best.f.day)), { signal });
+        scores.push({ aircraft: a, score: r.score });
+      } catch (e) {
+        if ((e as Error).name === "AbortError") throw e;
+      }
+    }
+    scores.sort((x, y) => y.score - x.score);
+    if (scores.length && (scores.length === 1 || scores[0].score - scores[1].score >= 0.1)) setGogglesOwner(g.name, scores[0].aircraft);
+    else say(t("gog.ownerAsk", { name: g.name }), true);
+  }
+
+  const setGogglesOwner = (file: string, aircraft: string | null) =>
+    update((s) => {
+      s.gogglesOwner ??= {};
+      if (aircraft) s.gogglesOwner[file] = aircraft;
+      else delete s.gogglesOwner[file];
+    });
+
+  // 사용자가 고른 비행에 직접 연결: 시계를 믿을 수 없으니 넓게(±10분) 찾는다
+  async function linkGogglesTo(file: string, flightId: string) {
+    const f = libRef.current?.flights.find((x) => x.id === flightId);
+    const g = idxRef.current?.goggles.find((x) => x.name === file);
+    if (!f || !g || isBusy()) return;
+    setGogglesOwner(file, f.aircraft);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setJob({ flightId: f.id, phase: "goggles", done: 0, total: 2, started: Date.now() });
+    try {
+      await syncCore(f, [shiftGoggles(g, clockErr(f.aircraft, f.day))], ctrl.signal, (k) => setJob((j) => j && { ...j, done: k }), 600);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") say(`${t("gog.syncing")}: ${e}`, true);
+    } finally {
+      abortRef.current = null;
+      setJob(null);
     }
   }
 
@@ -792,10 +916,11 @@ export function App() {
         s.goggles![f.id] = links;
       }
     });
-  const setLayout = (l: Layout | null) =>
+  const setLayout = (l: Layout | null, aircraft: string) =>
     update((s) => {
-      if (l) s.layout = l;
-      else delete s.layout;
+      s.layouts ??= {};
+      if (l) s.layouts[aircraft] = l;
+      else delete s.layouts[aircraft];
     });
   const setGogglesView = (f: Flight, file: string, view: "inset" | "full", manual: boolean) =>
     update((s) => {
@@ -1020,7 +1145,7 @@ export function App() {
     batch, busy: !!job || !!batch, stepsOf, stepTodo: () => todoOf(lib), runStep, openProject, pickDir, setRole, reconnect,
     refresh: async () => void (await scan(dirsRef.current, false, true)), setOverride, prefsOf, setPrefs, run, cancel: () => abortRef.current?.abort(),
     thumb: (stem) => thumbs[stem], seam, telemetryOf, previewFile, gogglesOf, gogglesMergeNeeded, setGogglesView, syncGogglesFor, nudgeGoggles, unlinkGoggles, addGoggles,
-    layout: layoutOf(state), setLayout,
+    layoutFor: (a: string) => layoutOf(state, a), setLayout, dirOf, hasTelemetry, ownerOf, setGogglesOwner, linkGogglesTo, aircraftFilter, setAircraftFilter,
     ytLogin, ytSync, ytUpload, quotaLeft, perUpload,
   };
   return (
