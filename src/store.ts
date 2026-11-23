@@ -83,6 +83,8 @@ export interface FlightPrefs {
   bottom: number;
 }
 export const defaultPrefs = (): FlightPrefs => ({ instruments: true, map: true, goggles: true, top: 0, bottom: 0.13 });
+// 비행 데이터(GPS·자세)가 없는 기체(O4 등)는 계기·지도를 기본으로 끄고 고글 OSD 만
+export const prefsDefault = (hasTelemetry: boolean): FlightPrefs => ({ ...defaultPrefs(), ...(hasTelemetry ? {} : { instruments: false, map: false }) });
 
 export interface GogglesLink {
   file: string; // goggles/ 안의 파일명
@@ -101,7 +103,10 @@ export interface State {
   remote?: Record<string, string>; // YouTube 동기화 결과: 원본 MP4 파일명 → videoId
   prefs?: Record<string, FlightPrefs>;
   goggles?: Record<string, GogglesLink[] | GogglesLink>; // flightId → 고글 연결 (클립마다 하나씩일 수 있음; 예전 형식은 단일 객체)
-  layout?: Layout; // 폴더 전체에 적용되는 HUD/OSD 배치
+  layout?: Layout; // 예전: 프로젝트 전체 HUD/OSD 배치 (기체별 배치가 없을 때 기본)
+  layouts?: Record<string, Layout>; // 기체별 HUD/OSD 배치
+  clock?: Record<string, Record<string, number[]>>; // 기체 → 날짜 → 배운 시계 오차들 (초, 고글 시각에 더함)
+  gogglesOwner?: Record<string, string>; // 고글 파일 → 사용자가 고른 주인 기체
   quota: { day: string; used: number };
 }
 
@@ -194,4 +199,4 @@ export const linksOf = (s: State, id: string): GogglesLink[] => {
   const v = s.goggles?.[id];
   return !v ? [] : Array.isArray(v) ? v : [v];
 };
-export const layoutOf = (s: State): Layout => ({ ...defaultLayout(), ...s.layout });
+export const layoutOf = (s: State, aircraft?: string): Layout => ({ ...defaultLayout(), ...((aircraft && s.layouts?.[aircraft]) || s.layout) });
