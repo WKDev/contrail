@@ -93,6 +93,9 @@ Outputs land in each step's output folder. Original folders are only read, never
 <details>
 <summary><b>Folder layout</b> (each slot can be changed)</summary>
 
+With several aircraft, put a `<aircraft>/raw` folder under the project (e.g. `avata2/raw`, `pavopro2/raw`). Each aircraft gets its own `merged/` and `hud/`, and goggles recordings live in one shared `goggles_raw/`; the app works out which aircraft each recording belongs to. Without aircraft folders it uses the single-aircraft layout below.
+
+
 | Slot (auto-detected folder names) | Meaning |
 |---|---|
 | Project folder | Holds `dji_state.json` and any new output folders |
