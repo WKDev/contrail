@@ -345,7 +345,7 @@ export const zh: Record<I18nKey, string> = {
   "err.noFrames": "没有输出帧",
   "err.bFrames": "编码器输出了 B 帧（不支持）",
   "warn.gogglesRead": "无法读取眼镜视频 {name}，该部分将不带 OSD 继续：{msg}",
-  "warn.noMap": "将在没有地图的情况下继续：{msg}",
+  "map.failed": "Couldn't load the map ({msg}). In Google Cloud, add {origin}/* to the key's website restrictions.",
   "warn.badFrame": "已跳过损坏的帧（约 {at} 处）：{msg}",
   "err.gsiLoad": "无法加载 Google 登录脚本",
   "err.noClientId": "请在设置中填写 Google OAuth 客户端 ID",

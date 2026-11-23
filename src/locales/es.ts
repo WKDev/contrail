@@ -345,7 +345,7 @@ export const es: Record<I18nKey, string> = {
   "err.noFrames": "No hay fotogramas de salida",
   "err.bFrames": "El codificador generó fotogramas B (no compatible)",
   "warn.gogglesRead": "No se pudo leer el vídeo de las gafas {name}; esa parte continúa sin OSD: {msg}",
-  "warn.noMap": "Continuando sin el mapa: {msg}",
+  "map.failed": "Couldn't load the map ({msg}). In Google Cloud, add {origin}/* to the key's website restrictions.",
   "warn.badFrame": "Se omitió un fotograma corrupto (cerca de {at}): {msg}",
   "err.gsiLoad": "No se pudo cargar el script de inicio de sesión de Google",
   "err.noClientId": "Introduce un ID de cliente OAuth de Google en Ajustes",

@@ -345,7 +345,7 @@ export const ja: Record<I18nKey, string> = {
   "err.noFrames": "出力フレームがありません",
   "err.bFrames": "エンコーダーが B フレームを出力しました（非対応）",
   "warn.gogglesRead": "ゴーグル動画 {name} を読み込めないため、その区間は OSD なしで続行します：{msg}",
-  "warn.noMap": "地図なしで続行します：{msg}",
+  "map.failed": "Couldn't load the map ({msg}). In Google Cloud, add {origin}/* to the key's website restrictions.",
   "warn.badFrame": "破損したフレームをスキップしました（{at} 付近）：{msg}",
   "err.gsiLoad": "Google ログインスクリプトの読み込みに失敗しました",
   "err.noClientId": "設定で Google OAuth クライアント ID を入力してください",

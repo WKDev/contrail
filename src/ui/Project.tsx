@@ -368,6 +368,11 @@ function Player({ f, srcs, burned, tel, prefs, mapsKey, goggles, layout, edit, o
   const [on, setOn] = useState(true);
   const track = useMemo(() => (tel ? buildTrack(tel) : null), [tel]);
   const tiles = useMemo(() => (mapsKey && track?.t.length ? new TileSource(mapsKey) : null), [mapsKey, track]);
+  const [mapErr, setMapErr] = useState<string | null>(null);
+  useEffect(() => {
+    setMapErr(tiles?.error ?? null);
+    if (tiles) tiles.onError = setMapErr;
+  }, [tiles]);
   const gogFrame = useGogglesVideo(goggles);
   const osd = useMemo(() => new OsdCompositor(), []);
   const urls = useMemo(() => srcs.map((s) => URL.createObjectURL(s.file)), [srcs]);
@@ -458,6 +463,7 @@ function Player({ f, srcs, burned, tel, prefs, mapsKey, goggles, layout, edit, o
 
   return (
     <div class="player">
+      {mapErr && <p class="note warn map-err">{t("map.failed", { msg: mapErr, origin: location.origin })}</p>}
       <div class={`player-frame ${edit ? "editing" : ""}`} onClick={edit ? undefined : toggle}>
         <div class="player-box">
           <video

@@ -306,7 +306,7 @@ export async function renderOverlay(input: Reader, out: SeekWriter, opts: Overla
       await tiles.prefetch(track, 118 * (tr.height / 1080), opts.onProgress);
     } catch (e) {
       tiles = null; // 지도 실패해도 궤적은 그림
-      warn(msg("warn.noMap", { msg: String((e as Error)?.message ?? e) }));
+      warn(msg("map.failed", { msg: String((e as Error)?.message ?? e), origin: globalThis.location?.origin ?? "" }));
     }
   }
   if (opts.signal?.aborted) throw abortError();
