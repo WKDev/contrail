@@ -7,7 +7,7 @@ import type { Flight } from "../src/library.ts";
 const clip = (stem: string) => ({ name: `${stem}.MP4`, stem, start: 0, duration: 60, size: 1 });
 const flight = (id: string, start: number, extra: Partial<Flight> = {}): Flight => ({
   id, number: 1, day: "2026-11-23", start, end: start + 60000, duration: 60, size: 1,
-  clips: [clip(id)], joins: [], status: "done", output: { name: `${id}.MP4` }, ...extra,
+  clips: [clip(id)], aircraft: "a", joins: [], status: "done", output: { name: `${id}.MP4` }, ...extra,
 });
 const pending2 = (id: string, start = 0) => flight(id, start, { status: "pending", clips: [clip(id), clip(`${id}b`)], output: undefined });
 const none = { linked: [], candidates: 0 };

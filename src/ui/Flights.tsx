@@ -29,6 +29,7 @@ export function FlightsView() {
     if (app.view === "pending") fl = fl.filter((f) => isPendingView(app.stepsOf(f)));
     if (app.view === "done") fl = fl.filter((f) => !isPendingView(app.stepsOf(f)));
     if (app.day) fl = fl.filter((f) => f.day === app.day);
+    if (app.aircraftFilter) fl = fl.filter((f) => f.aircraft === app.aircraftFilter);
     const q = app.query.trim().toLowerCase();
     if (q) {
       fl = fl.filter((f) => {
@@ -37,7 +38,7 @@ export function FlightsView() {
       });
     }
     return [...fl].sort((a, b) => (app.sortNew ? b.start - a.start : a.start - b.start));
-  }, [app.lib, app.view, app.day, app.query, app.sortNew, app.state.prefs, app.state.goggles]);
+  }, [app.lib, app.view, app.day, app.query, app.sortNew, app.state.prefs, app.state.goggles, app.aircraftFilter]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Flight[]>();
@@ -108,6 +109,7 @@ function FlightRow({ f, compact }: { f: Flight; compact: boolean }) {
         <span class="meta">
           {fmtTime(f.start)} – {fmtTime(f.end)} · {t("flight.clips", { n: f.clips.length })} · <span class="num">{fmtDur(f.duration)}</span> · <span class="num">{fmtSize(f.clips.reduce((x, c) => x + c.size, 0) || f.size)}</span>
         </span>
+        {(app.idx?.aircraft.length ?? 0) > 1 && <span class="chip aircraft" title={app.idx!.aircraft.find((x) => x.id === f.aircraft)?.model}><Drone size={12} strokeWidth={2} /> {f.aircraft}</span>}
         <StatusChip f={f} job={running} />
       </div>
       <div class="thumbs" style={compact ? undefined : { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>

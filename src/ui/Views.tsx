@@ -23,14 +23,18 @@ export function GogglesView() {
   const app = useApp();
   const list = app.idx?.goggles ?? [];
   const flights = app.lib?.flights ?? [];
+  const multi = (app.idx?.aircraft.length ?? 0) > 1;
   const rows = useMemo(
     () =>
       list.map((g) => {
         const linked = flights.find((f) => linksOf(app.state, f.id).some((l) => l.file === g.name));
-        const cand = linked ? null : flights.find((f) => matchGogglesForClips(f.clips, [g]).length > 0);
-        return { g, linked, cand };
+        const owner = app.ownerOf(g.name);
+        const cand = linked ? null : flights.find((f) => f.aircraft === owner?.aircraft && matchGogglesForClips(f.clips, [g]).length > 0);
+        // 직접 맞출 비행 후보: 시각이 가까운 순 5개
+        const near = [...flights].sort((a, b) => Math.abs(a.start - g.start) - Math.abs(b.start - g.start)).slice(0, 5);
+        return { g, linked, cand, owner, near };
       }),
-    [list, flights, app.state.goggles],
+    [list, flights, app.state.goggles, app.state.gogglesOwner, app.state.clock],
   );
   return (
     <>
@@ -44,7 +48,7 @@ export function GogglesView() {
           <div class="empty"><Glasses size={36} strokeWidth={1.4} /><p>{t("gog.listEmpty")}</p></div>
         ) : (
           <ul class="plain-list">
-            {rows.map(({ g, linked, cand }) => {
+            {rows.map(({ g, linked, cand, owner, near }) => {
               const f = linked ?? cand;
               const link = linked ? linksOf(app.state, linked.id).find((l) => l.file === g.name) ?? null : null;
               return (
@@ -54,6 +58,22 @@ export function GogglesView() {
                     <b class="mono">{g.name}{g.linked && <span class="tag">{t("gog.inFolder")}</span>}</b>
                     <span class="muted small num">{fmtDay(g.start)} {fmtTime(g.start)} · {fmtDur(g.duration)} · {g.width}×{g.height}</span>
                   </div>
+                  {multi && owner?.aircraft && (
+                    <span class="tag" title={t(`gog.owner_${owner.by}` as any)}>{owner.aircraft} · {t(`gog.owner_${owner.by}` as any)}</span>
+                  )}
+                  {multi && !linked && (owner?.by === "ambiguous" || owner?.by === "none" || owner?.by === "manual") && (
+                    <span class="gog-owner">
+                      {(app.idx?.aircraft ?? []).map((a) => (
+                        <button key={a.id} class={`soft-btn sm ${owner?.aircraft === a.id ? "on" : ""}`} onClick={() => app.setGogglesOwner(g.name, owner?.aircraft === a.id ? null : a.id)} disabled={app.busy}>{a.id}</button>
+                      ))}
+                    </span>
+                  )}
+                  {!f && (
+                    <select class="neu-inset small" aria-label={t("gog.pickFlight")} disabled={app.busy} onChange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) app.linkGogglesTo(g.name, v); }}>
+                      <option value="">{t("gog.pickFlight")}</option>
+                      {near.map((x) => <option key={x.id} value={x.id}>{x.aircraft !== "default" ? `${x.aircraft} · ` : ""}{fmtDay(x.start)} {fmtTime(x.start)}</option>)}
+                    </select>
+                  )}
                   {f ? (
                     <button class="soft-btn sm" onClick={() => { app.setView("all"); app.select(f.id); }}>
                       {t("gog.matched", { flight: flightTitle(f, app.state, (n) => `${fmtDay(f.start)} ${t("flight", { n })}`) })}

@@ -32,6 +32,9 @@ export function Project({ f }: { f: Flight }) {
   const [tel, setTel] = useState<Telemetry | null | undefined>(undefined);
   const [srcs, setSrcs] = useState<{ files: { file: File; dur: number }[]; kind: "overlay" | "output" | "proxy" } | null>(null);
   const gog = app.gogglesOf(f);
+  // 배치는 기체별 (Betaflight OSD 등 기체마다 위치·배율이 다름)
+  const layout = app.layoutFor(f.aircraft);
+  const saveLayout = useMemo(() => (l: Parameters<typeof app.setLayout>[0]) => app.setLayout(l, f.aircraft), [f.aircraft, app.setLayout]);
   const [tab, setTab] = useState<Tab>(f.status === "pending" && f.clips.length > 1 ? "merge" : "hud");
   const [focus, setFocus] = useState<{ i: number; k: number } | null>(null);
 
@@ -110,11 +113,11 @@ export function Project({ f }: { f: Flight }) {
   const hasTel = !!tel?.t.length;
   const telKnown = tel !== undefined;
   const gogSegs: Seg[] = gog.links.filter((x) => x.info).map((x) => {
-    const view = x.link.view ?? app.layout.gogglesView ?? "inset";
+    const view = x.link.view ?? layout.gogglesView ?? "inset";
     return { file: x.info!.file, offset: x.link.offset, duration: x.info!.duration, view, stat: stats[x.link.file] };
   });
   // HUD 탭 = 위젯 편집, 고글 탭 = OSD 영역 편집 (플레이어 위에서 바로, 자동 저장)
-  const le = useLayoutEditor(app.layout, app.setLayout, !srcs ? null : tab === "hud" ? "hud" : tab === "goggles" && gogSegs.length ? "osd" : null);
+  const le = useLayoutEditor(layout, saveLayout, !srcs ? null : tab === "hud" ? "hud" : tab === "goggles" && gogSegs.length ? "osd" : null);
   const ed = le.ed;
   const hudOn = prefs.instruments || prefs.map;
   const canOverlay = (hasTel && (prefs.instruments || prefs.map)) || (prefs.goggles && gogSegs.length > 0);
@@ -179,7 +182,7 @@ export function Project({ f }: { f: Flight }) {
               prefs={prefs}
               mapsKey={app.config.mapsKey}
               goggles={(prefs.goggles || ed?.mode === "osd") && gogSegs.length ? gogSegs : null}
-              layout={ed?.draft ?? app.layout}
+              layout={ed?.draft ?? layout}
               edit={ed}
               overlay={ed && <EditOverlay ed={ed} setEd={le.setEd} />}
               gogSegs={gogSegs}
@@ -233,12 +236,13 @@ export function Project({ f }: { f: Flight }) {
                 )}
                 <ClipOrder f={f} focus={focus} />
                 <p class="note"><ShieldCheck size={14} strokeWidth={2} /> {t("merge.lossless")}</p>
-                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `${(f.output.ref?.dir === "raw" ? app.dirs?.droneRaw.name : app.dirs?.droneMerged.name) ?? ""}/${f.output.name}` })}</p>}
+                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `${f.aircraft !== "default" ? `${f.aircraft}/` : ""}${f.output.ref?.dir === "raw" ? app.dirOf(f).raw.name : app.dirOf(f).merged.name}/${f.output.name}` })}</p>}
               </>
             )}
 
             {tab === "hud" && (
               <>
+                {app.hasTelemetry[f.aircraft] === false && <p class="note">{t("hud.noTelemetry")}</p>}
                 <Toggle
                   on={hudOn && (hasTel || !telKnown)}
                   disabled={telKnown && !hasTel}

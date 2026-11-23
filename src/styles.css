@@ -850,3 +850,13 @@ a { color: var(--accent); text-underline-offset: 3px; }
 .stepbar-arrow { color: var(--text-3); }
 .stepbar-note { flex-basis: 100%; padding-left: 2px; }
 .map-err { margin: 0 0 8px; }
+
+/* 기체 여러 대 */
+.flow-note { grid-column: 5; margin: 0; align-self: center; line-height: 1.4; }
+.flow-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.flow-add input { height: 30px; padding: 0 10px; border: 0; border-radius: 10px; color: var(--text); background: transparent; min-width: 200px; }
+.role-group { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
+.chip.aircraft { gap: 4px; }
+.gog-owner { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.gog-owner .on { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); }
+@media (max-width: 720px) { .flow-note { grid-column: auto; } }

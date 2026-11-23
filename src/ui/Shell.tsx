@@ -12,7 +12,7 @@ import { ExcludedView, GogglesView, UploadView } from "./Views.tsx";
 import { SettingsSheet } from "./Settings.tsx";
 import { Setup } from "./Setup.tsx";
 import { isPendingView } from "../steps.ts";
-import type { Role } from "../roles.ts";
+import { pickKey, type PickKey } from "../roles.ts";
 
 export function Shell() {
   const app = useApp();
@@ -125,6 +125,23 @@ function Sidebar() {
         {item("excluded", <EyeOff size={17} strokeWidth={1.75} />, t("nav.excluded"), counts.excluded)}
         {app.config.youtube && item("upload", <CloudUpload size={17} strokeWidth={1.75} />, t("nav.upload"))}
       </nav>
+      {(app.idx?.aircraft.length ?? 0) > 1 && (
+        <>
+          <div class="nav-label">{t("aircraft.label")}</div>
+          <nav class="nav">
+            <button class={`nav-item ${!app.aircraftFilter ? "on" : ""}`} onClick={() => app.setAircraftFilter(null)}>
+              <Drone size={16} strokeWidth={1.75} /><span>{t("aircraft.all")}</span><span class="count">{lib?.flights.length ?? 0}</span>
+            </button>
+            {app.idx!.aircraft.map((a) => (
+              <button key={a.id} class={`nav-item ${app.aircraftFilter === a.id ? "on" : ""}`} onClick={() => app.setAircraftFilter(app.aircraftFilter === a.id ? null : a.id)} title={a.model}>
+                <Drone size={16} strokeWidth={1.75} />
+                <span>{a.id}{a.model && <small class="muted"> · {a.model}</small>}</span>
+                <span class="count">{lib?.flights.filter((f) => f.aircraft === a.id).length ?? 0}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
       {days.length > 0 && (
         <>
           <div class="nav-label">{t("nav.dates")}</div>
@@ -158,19 +175,21 @@ function Sidebar() {
   );
 }
 
-// 사이드바 아래: 역할별 폴더 상태. 원본 폴더를 못 읽으면 그 줄만 "다시 연결"
-const ROLE_ICON: Record<Role, preact.ComponentChild> = {
-  droneRaw: <Drone size={15} strokeWidth={1.75} />, gogglesRaw: <Glasses size={15} strokeWidth={1.75} />,
-  droneMerged: <Merge size={15} strokeWidth={1.75} />, gogglesMerged: <Layers size={15} strokeWidth={1.75} />,
-  hud: <Gauge size={15} strokeWidth={1.75} />, logs: <ScrollText size={15} strokeWidth={1.75} />,
-};
+// 사이드바 아래: 기체별 폴더 + 공용 고글·비행기록. 원본 폴더를 못 읽으면 그 줄만 "다시 연결"
 function FolderStatus() {
   const app = useApp();
   const d = app.dirs!;
-  const state = (r: Role) => (r === "gogglesRaw" ? app.idx?.gogglesState : r === "logs" ? app.idx?.logsState : "ok") ?? "none";
-  const extra = (r: Role) =>
-    r === "gogglesRaw" && state(r) === "ok" ? ` · ${t("gfolder.count", { n: app.idx?.goggles.filter((g) => g.linked).length ?? 0 })}`
-    : r === "logs" && app.idx?.logs.length ? ` · ${t("flog.count", { n: app.idx.logs.length })}` : "";
+  const multi = d.aircraft.length > 1 || d.aircraft[0]?.id !== "default";
+  const row = (k: PickKey, icon: preact.ComponentChild, label: string, h: FileSystemDirectoryHandle | null, state: string, extra = "") => (
+    <li class={`role-row ${state === "missing" ? "warn" : ""} ${h ? "" : "off"}`} key={k}>
+      {state === "missing" ? <TriangleAlert size={15} strokeWidth={1.75} /> : icon}
+      <span class="grow">{label}{extra}</span>
+      <b class="mono" title={h?.name}>{h ? h.name : t("role.none")}</b>
+      {state === "missing" && <button class="soft-btn sm" onClick={() => app.reconnect(k)} disabled={app.busy}>{t("gfolder.reconnect")}</button>}
+    </li>
+  );
+  const gState = app.idx?.gogglesState ?? "none";
+  const lState = app.idx?.logsState ?? "none";
   return (
     <div class="folders neu">
       <div class="folder-card">
@@ -184,18 +203,18 @@ function FolderStatus() {
         </button>
       </div>
       <ul class="role-list">
-        {(["droneRaw", "gogglesRaw", "droneMerged", "gogglesMerged", "hud", "logs"] as Role[]).map((r) => {
-          const h = d[r] as FileSystemDirectoryHandle | null;
-          const missing = state(r) === "missing";
-          return (
-            <li class={`role-row ${missing ? "warn" : ""} ${h ? "" : "off"}`} key={r}>
-              {missing ? <TriangleAlert size={15} strokeWidth={1.75} /> : ROLE_ICON[r]}
-              <span class="grow">{t(`role.${r}` as any)}{extra(r)}</span>
-              <b class="mono" title={h?.name}>{h ? h.name : t("role.none")}</b>
-              {missing && <button class="soft-btn sm" onClick={() => app.reconnect(r)} disabled={app.busy}>{t("gfolder.reconnect")}</button>}
-            </li>
-          );
-        })}
+        {d.aircraft.map((a) => (
+          <>
+            {multi && <li class="role-group" key={`g-${a.id}`}><Drone size={13} strokeWidth={2} /> {a.id}</li>}
+            {row(pickKey(a.id, "raw"), <Drone size={15} strokeWidth={1.75} />, t("role.droneRaw"), a.raw, "ok")}
+            {row(pickKey(a.id, "merged"), <Merge size={15} strokeWidth={1.75} />, t("role.droneMerged"), a.merged, "ok")}
+            {row(pickKey(a.id, "hud"), <Gauge size={15} strokeWidth={1.75} />, t("role.hud"), a.hud, "ok")}
+          </>
+        ))}
+        {multi && <li class="role-group" key="g-shared"><Glasses size={13} strokeWidth={2} /> {t("aircraft.shared")}</li>}
+        {row("gogglesRaw", <Glasses size={15} strokeWidth={1.75} />, t("role.gogglesRaw"), d.gogglesRaw, gState, gState === "ok" ? ` · ${t("gfolder.count", { n: app.idx?.goggles.filter((g) => g.linked).length ?? 0 })}` : "")}
+        {row("gogglesMerged", <Layers size={15} strokeWidth={1.75} />, t("role.gogglesMerged"), d.gogglesMerged, "ok")}
+        {row("logs", <ScrollText size={15} strokeWidth={1.75} />, t("role.logs"), d.logs, lState, app.idx?.logs.length ? ` · ${t("flog.count", { n: app.idx.logs.length })}` : "")}
       </ul>
     </div>
   );

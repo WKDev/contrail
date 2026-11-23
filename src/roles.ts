@@ -2,9 +2,6 @@
 // 원본(드론·고글·비행기록)은 읽기만, 결과(드론 병합본·고글 병합본·HUD)에만 쓴다.
 import { RAW_RE } from "./store.ts";
 
-export type Role = "droneRaw" | "gogglesRaw" | "droneMerged" | "gogglesMerged" | "hud" | "logs";
-export const ROLES: Role[] = ["droneRaw", "gogglesRaw", "droneMerged", "gogglesMerged", "hud", "logs"];
-export const READONLY_ROLES: Role[] = ["droneRaw", "gogglesRaw", "logs"];
 // 원본 칸(읽기 전용): 기체 raw·고글 원본·비행기록
 export const isReadonlyPick = (k: string) => k === "gogglesRaw" || k === "logs" || k.endsWith(":raw");
 
