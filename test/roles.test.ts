@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectRoles } from "../src/roles.ts";
+import { detectAircraft, detectRoles, migratePicks } from "../src/roles.ts";
 
 test("Avata2 구조", () => {
   const g = detectRoles(["aircraft_raw", "google_raw", "aircraft_merged"], { rawAtTop: false, externalGoggles: false });
@@ -46,4 +46,20 @@ test("아무것도 없으면 프로젝트 폴더가 원본", () => {
   assert.equal(g.droneRaw, ".");
   assert.deepEqual(g.droneMerged, { name: "drone_merged", create: true });
   assert.deepEqual(g.hud, { name: "hud", create: true });
+});
+
+test("raw 를 가진 하위 폴더가 기체", () => {
+  const sub = [{ name: "pavopro2", hasRaw: true }, { name: "avata2", hasRaw: true }, { name: "goggles_raw", hasRaw: false }, { name: "docs", hasRaw: false }];
+  assert.deepEqual(detectAircraft(sub), ["avata2", "pavopro2"]);
+});
+
+test("고글·숨김·예전 구조 이름은 기체가 아님", () => {
+  assert.deepEqual(detectAircraft([{ name: "goggles", hasRaw: true }, { name: "google_x", hasRaw: true }, { name: "_old", hasRaw: true }, { name: ".x", hasRaw: true }]), []);
+});
+
+test("예전 picks 이전", () => {
+  const h = {} as FileSystemDirectoryHandle, h2 = {} as FileSystemDirectoryHandle, g = {} as FileSystemDirectoryHandle;
+  assert.deepEqual(migratePicks({ droneRaw: h, hud: h2, gogglesRaw: g, logs: null }), { "aircraft:default:raw": h, "aircraft:default:hud": h2, gogglesRaw: g, logs: null });
+  const already = { "aircraft:avata2:raw": h };
+  assert.deepEqual(migratePicks(already), already);
 });
