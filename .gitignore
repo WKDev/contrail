@@ -16,3 +16,4 @@ test/.local
 *.SRT
 DJIFlightRecord_*.txt
 dji_state.json
+.superpowers/
