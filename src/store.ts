@@ -127,6 +127,14 @@ export function writeState(root: FileSystemDirectoryHandle, s: State) {
   return writing;
 }
 
+export async function listFiles(dir: FileSystemDirectoryHandle) {
+  const out: Record<string, FileSystemFileHandle> = {};
+  for await (const [name, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
+    if (h.kind === "file") out[name] = h as FileSystemFileHandle;
+  }
+  return out;
+}
+
 export async function exists(dir: FileSystemDirectoryHandle, name: string) {
   try {
     await dir.getFileHandle(name);
