@@ -799,3 +799,64 @@ a { color: var(--accent); text-underline-offset: 3px; }
 .crash { gap: 10px; text-align: center; }
 .crash code { max-width: 560px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-3) 10%, transparent); overflow-wrap: anywhere; }
 .crash .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* ---------- 폴더 설정 (흐름도형) ---------- */
+.setup-card { width: min(860px, 100%); padding: 36px 36px 28px; border-radius: 28px; display: flex; flex-direction: column; gap: 18px; }
+.setup-card h1 { font-size: 24px; letter-spacing: -0.02em; line-height: 1.25; }
+.setup-card.modal { max-height: calc(100vh - 48px); overflow: auto; }
+.setup-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px 16px; background: rgba(10, 14, 22, 0.35); backdrop-filter: blur(4px); }
+.flow-project { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; box-shadow: var(--inset); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.flow-project.set { box-shadow: inset 0 0 0 2px var(--accent); }
+.flow { display: grid; grid-template-columns: 1fr 22px 1fr 22px 1fr; grid-template-rows: auto auto auto; align-items: center; gap: 8px 6px; }
+.flow-stage { font-size: 11.5px; letter-spacing: 0.06em; color: var(--text-3); text-transform: uppercase; }
+.flow-node { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--surface) 70%, transparent); box-shadow: var(--raise-sm); }
+.flow-node.hud { grid-column: 5; grid-row: 2 / span 2; align-self: stretch; justify-content: center; box-shadow: var(--raise-sm), inset 0 0 0 2px var(--accent-soft); }
+.flow-node.wide { width: 100%; }
+.flow-node.none { opacity: 0.75; }
+.flow-node.warn { box-shadow: var(--raise-sm), inset 0 0 0 2px var(--warn); }
+.flow-node-head { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.flow-path { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-node-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.flow-arrow { color: var(--text-3); justify-self: center; }
+.flow-arrow.down { transform: rotate(35deg); }
+.flow-arrow.up { transform: rotate(-35deg); }
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
+.tag.new { background: var(--warn-soft); color: var(--warn); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); display: inline-flex; align-items: center; gap: 3px; }
+.icon-btn.sm { width: 26px; height: 26px; }
+@media (max-width: 720px) {
+  .setup-card { padding: 24px 16px 20px; }
+  .flow { grid-template-columns: 1fr; }
+  .flow-stage, .flow > span:empty { display: none; }
+  .flow-node.hud { grid-column: auto; grid-row: auto; }
+  .flow-arrow, .flow-arrow.down, .flow-arrow.up { transform: rotate(90deg); }
+}
+
+/* 사이드바 역할 목록 */
+.role-list { list-style: none; margin: 0; padding: 2px 8px 8px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.role-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.role-row b { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); }
+.role-row.off b { color: var(--text-3); }
+.role-row.warn { color: var(--warn); }
+
+/* 라이브러리 단계 줄 */
+.stepbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 0 16px 8px; padding: 10px 14px; border-radius: 16px; }
+.stepbar-step { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: 12px; position: relative; }
+.stepbar-step.todo { background: var(--accent-soft); }
+.stepbar-step.ok { color: var(--text-3); }
+.stepbar-step.ok svg { color: var(--ok); }
+.stepbar-step.run { box-shadow: inset 0 0 0 2px var(--accent); }
+.stepbar-label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; }
+.stepbar-arrow { color: var(--text-3); }
+.stepbar-note { flex-basis: 100%; padding-left: 2px; }
+.map-err { margin: 0 0 8px; }
+
+/* 기체 여러 대 */
+.flow-note { grid-column: 5; margin: 0; align-self: center; line-height: 1.4; }
+.flow-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.flow-add input { height: 30px; padding: 0 10px; border: 0; border-radius: 10px; color: var(--text); background: transparent; min-width: 200px; }
+.role-group { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
+.chip.aircraft { gap: 4px; }
+.gog-owner { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.gog-owner .on { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); }
+@media (max-width: 720px) { .flow-note { grid-column: auto; } }

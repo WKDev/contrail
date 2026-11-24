@@ -49,7 +49,7 @@ Contrail does all of that in one pass: it joins the splits losslessly, lays the 
 - **HUD overlay.** Instruments are drawn from the attitude, heading, speed, altitude and GPS stored inside the video file. There are 12 widgets, 15 themes and 8 layout templates. You lay them out by dragging on the player, and they snap to edges, spacing and circle-to-circle tangency.
 - **Goggles OSD.** Goggles 3 recordings are **synced automatically** by timestamp and motion correlation. Only the OSD is keyed out and laid over the full-quality drone footage, and stretches showing menus or warning dialogs are skipped.
 - **Flight record summary.** It reads `DJIFlightRecord_*.txt` headers and pairs flight time, distance and max altitude/speed with each video. Only the header is read, since the body is encrypted.
-- **Process all.** One button merges every pending flight and renders the HUD videos, one after another. You can cancel at any point, and a failed flight doesn't stop the rest.
+- **Step-by-step batches.** Run ① drone merge → ② goggles (match + merge) → ③ HUD one step at a time, or all in order. You can cancel at any point, and a failed flight doesn't stop the rest.
 - **YouTube upload (optional).** Hidden unless you turn it on in Settings.
 
 <br>
@@ -81,28 +81,32 @@ Contrail does all of that in one pass: it joins the splits losslessly, lays the 
 - Optionally, the goggles' SD card or a folder of goggles recordings.
 
 **Steps:**
-1. Open the app and pick your **drone footage folder**, plus the goggles folder if you have one.
+1. Open the app and pick a **project folder**. Its subfolder names fill the drone originals, goggles originals and output slots; change any slot you like.
 2. Clips are grouped into flights. Open a flight to preview the merged result in the player.
 3. Tune the instruments in the **HUD** tab and the OSD region in the **Goggles** tab. Changes save instantly, and Ctrl+Z undoes them.
-4. Click **Merge and build overlay**, or **Process all** in the library.
+4. In the step bar above the library, run **① Drone merge / ② Goggles / ③ HUD**, or **Run all in order**.
 
-Finished videos land in `2_ready/` inside your folder. Originals are never deleted; they're moved to `_sources/`.
+Outputs land in each step's output folder. Original folders are only read, never moved or deleted.
 
 <br clear="right">
 
 <details>
-<summary><b>Folder layout</b> (created by the app)</summary>
+<summary><b>Folder layout</b> (each slot can be changed)</summary>
 
-| Path | Meaning |
+With several aircraft, put a `<aircraft>/raw` folder under the project (e.g. `avata2/raw`, `pavopro2/raw`). Each aircraft gets its own `merged/` and `hud/`, and goggles recordings live in one shared `goggles_raw/`; the app works out which aircraft each recording belongs to. Without aircraft folders it uses the single-aircraft layout below.
+
+
+| Slot (auto-detected folder names) | Meaning |
 |---|---|
-| `<folder>/` | Waiting to be merged. Copy `DJI_*.MP4/.LRF/.SRT` from the SD card here |
-| `2_ready/` | Finished videos (`*_merged.MP4`, `*_hud.MP4`, `*_goggles.MP4`) + flight data `*.telemetry.json` |
-| `3_uploaded/` | Videos already uploaded to YouTube (when upload is enabled) |
-| `_sources/` | Originals used in a merge (never deleted) |
-| `_excluded/` | Short clips that were skipped |
-| `goggles/` | Goggles recordings (copied with "Add goggles videos", or dropped in by hand) |
-| `FlightRecords/` | (optional) Flight records `DJIFlightRecord_*.txt` |
-| `dji_state.json` | Manual choices, per-flight settings, goggles pairings |
+| Project folder | Holds `dji_state.json` and any new output folders |
+| Drone originals (`aircraft_raw`, `drone_raw`, `raw`, else the project folder itself) | `DJI_*.MP4/.LRF/.SRT` from the SD card. **Read only, never moved** |
+| Goggles originals (`google_raw`, `goggles_raw`, `goggles`) | Goggles recordings. Read only (written only by "Add goggles videos") |
+| ① Merged drone (`aircraft_merged`, `drone_merged`) | `*_merged.MP4` + flight data `*.telemetry.json` |
+| ② Merged goggles (`google_merged`, `goggles_merged`) | `*_goggles.MP4` |
+| ③ HUD videos (`hud`) | `*_hud.MP4` |
+| Flight records (`FlightRecords`) | (optional) `DJIFlightRecord_*.txt` |
+
+The old layout (originals at the top + `2_ready/`) still opens: all three outputs go to `2_ready/`, the old `_sources/` and `3_uploaded/` are read-only search locations, and originals in `_excluded/` come back as excluded.
 
 </details>
 
@@ -127,7 +131,7 @@ pnpm build      # type-check + static build → dist/
 ```
 
 `dist/` can be deployed to any static host that serves HTTPS. Copy `.env.example` to `.env` for default map and upload settings.
-`VITE_` values are bundled verbatim, so **restrict API keys by HTTP referrer**. Users can also enter keys in the app's Settings.
+`VITE_` values are bundled verbatim, so **restrict API keys by HTTP referrer**. For local development, also allow `http://localhost:5173/*` or the map won't load. Users can also enter keys in the app's Settings.
 
 <details>
 <summary><b>Code tour</b></summary>

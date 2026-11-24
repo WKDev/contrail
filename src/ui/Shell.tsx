@@ -1,7 +1,7 @@
 import { Component } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
-  ScrollText,
+  ScrollText, Gauge,
   Calendar, Check, CloudUpload, Drone, EyeOff, FolderOpen, Glasses, Layers, LoaderCircle, Merge, RefreshCw, Settings as SettingsIcon, CircleCheck, TriangleAlert, X,
 } from "lucide-preact";
 import { useApp, type View } from "../app.tsx";
@@ -10,11 +10,14 @@ import { FlightsView } from "./Flights.tsx";
 import { Project } from "./Project.tsx";
 import { ExcludedView, GogglesView, UploadView } from "./Views.tsx";
 import { SettingsSheet } from "./Settings.tsx";
+import { Setup } from "./Setup.tsx";
+import { isPendingView } from "../steps.ts";
+import { pickKey, type PickKey } from "../roles.ts";
 
 export function Shell() {
   const app = useApp();
   if (!("showDirectoryPicker" in window) || typeof VideoDecoder === "undefined") return <Unsupported />;
-  if (!app.dirs) return <Welcome />;
+  if (!app.dirs) return <Setup />;
   const bg = app.selected ? app.thumb(app.selected.clips[0].stem) : undefined;
   const isFlights = app.view === "all" || app.view === "pending" || app.view === "done";
   if (app.selected) {
@@ -26,6 +29,7 @@ export function Shell() {
         <Toasts />
         <JobCard />
         {app.showSettings && <SettingsSheet />}
+        {app.showSetup && <Setup modal />}
       </div>
     );
   }
@@ -43,6 +47,7 @@ export function Shell() {
       <Toasts />
       <JobCard />
       {app.showSettings && <SettingsSheet />}
+      {app.showSetup && <Setup modal />}
     </div>
   );
 }
@@ -81,12 +86,12 @@ function Sidebar() {
     const fl = lib?.flights ?? [];
     return {
       all: fl.length,
-      pending: fl.filter((f) => f.status === "pending").length,
-      done: fl.filter((f) => f.status === "done").length,
+      pending: fl.filter((f) => isPendingView(app.stepsOf(f))).length,
+      done: fl.filter((f) => !isPendingView(app.stepsOf(f))).length,
       goggles: app.idx?.goggles.length ?? 0,
       excluded: lib?.excluded.length ?? 0,
     };
-  }, [lib, app.idx]);
+  }, [lib, app.idx, app.state.prefs, app.state.goggles]);
   const days = useMemo(() => {
     const m = new Map<string, { n: number; start: number }>();
     for (const f of lib?.flights ?? []) {
@@ -120,6 +125,23 @@ function Sidebar() {
         {item("excluded", <EyeOff size={17} strokeWidth={1.75} />, t("nav.excluded"), counts.excluded)}
         {app.config.youtube && item("upload", <CloudUpload size={17} strokeWidth={1.75} />, t("nav.upload"))}
       </nav>
+      {(app.idx?.aircraft.length ?? 0) > 1 && (
+        <>
+          <div class="nav-label">{t("aircraft.label")}</div>
+          <nav class="nav">
+            <button class={`nav-item ${!app.aircraftFilter ? "on" : ""}`} onClick={() => app.setAircraftFilter(null)}>
+              <Drone size={16} strokeWidth={1.75} /><span>{t("aircraft.all")}</span><span class="count">{lib?.flights.length ?? 0}</span>
+            </button>
+            {app.idx!.aircraft.map((a) => (
+              <button key={a.id} class={`nav-item ${app.aircraftFilter === a.id ? "on" : ""}`} onClick={() => app.setAircraftFilter(app.aircraftFilter === a.id ? null : a.id)} title={a.model}>
+                <Drone size={16} strokeWidth={1.75} />
+                <span>{a.id}{a.model && <small class="muted"> · {a.model}</small>}</span>
+                <span class="count">{lib?.flights.filter((f) => f.aircraft === a.id).length ?? 0}</span>
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
       {days.length > 0 && (
         <>
           <div class="nav-label">{t("nav.dates")}</div>
@@ -143,7 +165,7 @@ function Sidebar() {
       <div class="sidebar-foot">
         <FolderStatus />
         <div class="foot-row">
-          <button class="ghost-btn" onClick={() => app.openFolder()} disabled={!!app.job}>{t("folder.change")}</button>
+          <button class="ghost-btn" onClick={() => app.setShowSetup(true)} disabled={app.busy}>{t("folder.change")}</button>
           <button class="icon-btn" onClick={() => app.setShowSettings(true)} title={t("nav.settings")} aria-label={t("nav.settings")}>
             <SettingsIcon size={17} strokeWidth={1.75} />
           </button>
@@ -153,124 +175,47 @@ function Sidebar() {
   );
 }
 
-// 사이드바 아래: 드론 폴더 / 고글 폴더 상태
+// 사이드바 아래: 기체별 폴더 + 공용 고글·비행기록. 원본 폴더를 못 읽으면 그 줄만 "다시 연결"
 function FolderStatus() {
   const app = useApp();
-  const st = app.idx?.gogglesExt ?? "none";
-  const ext = app.dirs!.gogglesExt;
-  const nGog = app.idx?.goggles.filter((g) => g.linked).length ?? 0;
+  const d = app.dirs!;
+  const multi = d.aircraft.length > 1 || d.aircraft[0]?.id !== "default";
+  const row = (k: PickKey, icon: preact.ComponentChild, label: string, h: FileSystemDirectoryHandle | null, state: string, extra = "") => (
+    <li class={`role-row ${state === "missing" ? "warn" : ""} ${h ? "" : "off"}`} key={k}>
+      {state === "missing" ? <TriangleAlert size={15} strokeWidth={1.75} /> : icon}
+      <span class="grow">{label}{extra}</span>
+      <b class="mono" title={h?.name}>{h ? h.name : t("role.none")}</b>
+      {state === "missing" && <button class="soft-btn sm" onClick={() => app.reconnect(k)} disabled={app.busy}>{t("gfolder.reconnect")}</button>}
+    </li>
+  );
+  const gState = app.idx?.gogglesState ?? "none";
+  const lState = app.idx?.logsState ?? "none";
   return (
     <div class="folders neu">
       <div class="folder-card">
-        <Drone size={17} strokeWidth={1.75} />
+        <FolderOpen size={17} strokeWidth={1.75} />
         <div class="folder-meta">
-          <span>{t("setup.drone")}</span>
-          <b title={app.dirs!.root.name}>{app.dirs!.root.name || t("folder.unnamed")}</b>
+          <span>{t("setup.project")}</span>
+          <b title={d.project.name}>{d.project.name || t("folder.unnamed")}</b>
         </div>
         <button class="icon-btn" onClick={app.refresh} title={t("folder.refresh")} aria-label={t("folder.refresh")} disabled={app.loading}>
           <RefreshCw size={15} strokeWidth={1.75} class={app.loading ? "spin" : ""} />
         </button>
       </div>
-      <div class={`folder-card ${st === "missing" ? "warn" : ""}`}>
-        {st === "missing" ? <TriangleAlert size={17} strokeWidth={1.75} /> : <Glasses size={17} strokeWidth={1.75} />}
-        <div class="folder-meta">
-          <span>{t("setup.goggles")}{ext && st === "ok" ? ` · ${t("gfolder.count", { n: nGog })}` : ""}</span>
-          <b title={ext?.name}>{ext ? ext.name : t("gfolder.none")}</b>
-          {st === "missing" && <span class="warn-text">{t("gfolder.missing")}</span>}
-        </div>
-        {st === "missing" ? (
-          <button class="soft-btn sm" onClick={app.reconnectGoggles} disabled={!!app.job}>{t("gfolder.reconnect")}</button>
-        ) : (
-          <button class="icon-btn" onClick={app.linkGogglesFolder} disabled={!!app.job} title={ext ? t("gfolder.change") : t("gfolder.pick")} aria-label={ext ? t("gfolder.change") : t("gfolder.pick")}>
-            <FolderOpen size={15} strokeWidth={1.75} />
-          </button>
-        )}
-      </div>
-      <LogsRow />
-    </div>
-  );
-}
-
-// 비행기록 폴더 (선택): 찾은 기록 수
-function LogsRow() {
-  const app = useApp();
-  const ext = app.dirs!.logsExt;
-  const st = app.idx?.logsExt ?? "none";
-  const n = app.idx?.logs.length ?? 0;
-  return (
-    <div class={`folder-card ${st === "missing" ? "warn" : ""}`}>
-      {st === "missing" ? <TriangleAlert size={17} strokeWidth={1.75} /> : <ScrollText size={17} strokeWidth={1.75} />}
-      <div class="folder-meta">
-        <span>{t("flog.folder")}{n ? ` · ${t("flog.count", { n })}` : ""}</span>
-        <b title={ext?.name}>{ext ? ext.name : n ? t("flog.found") : t("flog.none")}</b>
-        {st === "missing" && <span class="warn-text">{t("gfolder.missing")}</span>}
-      </div>
-      <button class="icon-btn" onClick={app.linkLogsFolder} disabled={!!app.job} title={t("flog.pick")} aria-label={t("flog.pick")}>
-        <FolderOpen size={15} strokeWidth={1.75} />
-      </button>
-    </div>
-  );
-}
-
-// 첫 화면: 드론 영상 폴더(필수)와 고글 녹화 폴더(선택)를 정하고 시작
-function Welcome() {
-  const app = useApp();
-  const [drone, setDrone] = useState<FileSystemDirectoryHandle | null>(null);
-  const [gog, setGog] = useState<FileSystemDirectoryHandle | null | undefined>(undefined); // undefined = 아직 안 정함, null = 고글 없음
-  const [busy, setBusy] = useState(false);
-  const d = drone ?? app.savedRoot;
-  const g = gog === undefined ? app.savedGoggles : gog;
-  const start = async () => {
-    if (!d) return;
-    setBusy(true);
-    await app.openFolder(d, g ?? null);
-    setBusy(false);
-  };
-  return (
-    <div class="welcome">
-      <div class="ambient welcome-ambient" aria-hidden="true" />
-      <section class="welcome-card glass">
-        <span class="brand-mark lg"><Drone size={28} strokeWidth={1.6} /></span>
-        <div>
-          <h1>{t("empty.title")}</h1>
-          <p class="lead">{t("setup.lead")}</p>
-        </div>
-        <ol class="setup">
-          <li class={`slot ${d ? "set" : ""}`}>
-            <span class="step-dot">{d ? <Check size={14} strokeWidth={3} /> : 1}</span>
-            <div class="grow">
-              <div class="slot-title"><b>{t("setup.drone")}</b><span class="tag">{t("setup.required")}</span></div>
-              <p class="muted small">{t("setup.droneHint")}</p>
-              {d && <p class="slot-name"><FolderOpen size={14} strokeWidth={1.9} /> {d.name || t("folder.unnamed")}{!drone && <span class="tag">{t("setup.last")}</span>}</p>}
-            </div>
-            <button class={d ? "soft-btn sm" : "clay-btn sm"} onClick={async () => { const h = await app.pickDir("drone"); if (h) setDrone(h); }}>
-              {d ? t("setup.change") : t("setup.pick")}
-            </button>
-          </li>
-          <li class={`slot ${g ? "set" : ""}`}>
-            <span class="step-dot">{g ? <Check size={14} strokeWidth={3} /> : 2}</span>
-            <div class="grow">
-              <div class="slot-title"><b>{t("setup.goggles")}</b><span class="tag">{t("setup.optional")}</span></div>
-              <p class="muted small">{t("setup.gogglesHint")}</p>
-              {g && <p class="slot-name"><Glasses size={14} strokeWidth={1.9} /> {g.name}{gog === undefined && <span class="tag">{t("setup.last")}</span>}</p>}
-            </div>
-            <div class="slot-actions">
-              <button class="soft-btn sm" onClick={async () => { const h = await app.pickDir("goggles"); if (h) setGog(h); }}>
-                {g ? t("setup.change") : t("setup.pick")}
-              </button>
-              {g && <button class="text-btn sm" onClick={() => setGog(null)}>{t("setup.noGoggles")}</button>}
-            </div>
-          </li>
-        </ol>
-        <div class="welcome-actions">
-          <button class="clay-btn" onClick={start} disabled={!d || busy}>
-            {busy ? <Spinner size={18} /> : <FolderOpen size={18} strokeWidth={1.9} />} {t("setup.start")}
-          </button>
-          {!g && <span class="muted small">{t("setup.laterHint")}</span>}
-        </div>
-        <p class="fine">{t("empty.privacy")}</p>
-        <FamilyLine />
-      </section>
+      <ul class="role-list">
+        {d.aircraft.map((a) => (
+          <>
+            {multi && <li class="role-group" key={`g-${a.id}`}><Drone size={13} strokeWidth={2} /> {a.id}</li>}
+            {row(pickKey(a.id, "raw"), <Drone size={15} strokeWidth={1.75} />, t("role.droneRaw"), a.raw, "ok")}
+            {row(pickKey(a.id, "merged"), <Merge size={15} strokeWidth={1.75} />, t("role.droneMerged"), a.merged, "ok")}
+            {row(pickKey(a.id, "hud"), <Gauge size={15} strokeWidth={1.75} />, t("role.hud"), a.hud, "ok")}
+          </>
+        ))}
+        {multi && <li class="role-group" key="g-shared"><Glasses size={13} strokeWidth={2} /> {t("aircraft.shared")}</li>}
+        {row("gogglesRaw", <Glasses size={15} strokeWidth={1.75} />, t("role.gogglesRaw"), d.gogglesRaw, gState, gState === "ok" ? ` · ${t("gfolder.count", { n: app.idx?.goggles.filter((g) => g.linked).length ?? 0 })}` : "")}
+        {row("gogglesMerged", <Layers size={15} strokeWidth={1.75} />, t("role.gogglesMerged"), d.gogglesMerged, "ok")}
+        {row("logs", <ScrollText size={15} strokeWidth={1.75} />, t("role.logs"), d.logs, lState, app.idx?.logs.length ? ` · ${t("flog.count", { n: app.idx.logs.length })}` : "")}
+      </ul>
     </div>
   );
 }
@@ -278,7 +223,7 @@ function Welcome() {
 // OUWORK 제품군 표시 (ouwork.io 는 ?lang= 으로 언어를 이어받음)
 // ouwork.io 는 한국어·영어만: 나머지 언어는 영어로
 const ouworkUrl = () => `https://ouwork.io/?lang=${getLang() === "ko" ? "ko" : "en"}`;
-function FamilyLine() {
+export function FamilyLine() {
   return (
     <p class="family-line">
       <img src="/ouwork-mark.png" width="18" height="18" alt="" />
@@ -343,7 +288,7 @@ function JobCard() {
         <Spinner size={15} />
         <div class="grow">
           <div class="run-text">
-            <b>{t("batch.running")}</b>
+            <b>{t(`step.${b.step}`)} · {t("batch.running")}</b>
             <span class="num">{b.i}/{b.n}</span>
           </div>
           <span class="small muted">{b.label}{j ? ` · ${t(PHASE_TEXT[j.phase] ?? "status.running")} ${Math.round(inner * 100)}%` : ""}</span>

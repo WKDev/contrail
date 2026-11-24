@@ -5,6 +5,8 @@ import type { Flight, Join } from "../library.ts";
 import { fmtDay, fmtDur, fmtSize, fmtTime, t } from "../i18n.ts";
 import { flightTitle } from "../library.ts";
 import { Spinner } from "./Shell.tsx";
+import { StepBar } from "./StepBar.tsx";
+import { isPendingView } from "../steps.ts";
 
 const MODE_KEY = "dji-uploader-view";
 export function FlightsView() {
@@ -24,9 +26,10 @@ export function FlightsView() {
   };
   const flights = useMemo(() => {
     let fl = app.lib?.flights ?? [];
-    if (app.view === "pending") fl = fl.filter((f) => f.status === "pending");
-    if (app.view === "done") fl = fl.filter((f) => f.status === "done");
+    if (app.view === "pending") fl = fl.filter((f) => isPendingView(app.stepsOf(f)));
+    if (app.view === "done") fl = fl.filter((f) => !isPendingView(app.stepsOf(f)));
     if (app.day) fl = fl.filter((f) => f.day === app.day);
+    if (app.aircraftFilter) fl = fl.filter((f) => f.aircraft === app.aircraftFilter);
     const q = app.query.trim().toLowerCase();
     if (q) {
       fl = fl.filter((f) => {
@@ -35,7 +38,7 @@ export function FlightsView() {
       });
     }
     return [...fl].sort((a, b) => (app.sortNew ? b.start - a.start : a.start - b.start));
-  }, [app.lib, app.view, app.day, app.query, app.sortNew, app.state.prefs]);
+  }, [app.lib, app.view, app.day, app.query, app.sortNew, app.state.prefs, app.state.goggles, app.aircraftFilter]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Flight[]>();
@@ -54,11 +57,11 @@ export function FlightsView() {
           <button role="radio" aria-checked={mode === "grid"} class={mode === "grid" ? "on" : ""} onClick={() => setMode("grid")} aria-label={t("a11y.grid")}><LayoutGrid size={15} strokeWidth={1.75} /></button>
           <button role="radio" aria-checked={mode === "list"} class={mode === "list" ? "on" : ""} onClick={() => setMode("list")} aria-label={t("a11y.list")}><List size={15} strokeWidth={1.75} /></button>
         </div>
-        <BatchButton />
         <button class="soft-btn" onClick={() => app.setSortNew(!app.sortNew)}>
           <ArrowDownUp size={15} strokeWidth={1.75} /> {app.sortNew ? t("sort.new") : t("sort.old")}
         </button>
       </header>
+      <StepBar />
       <div class="scroll">
         {app.loading && !app.lib ? (
           <SkeletonList />
@@ -106,6 +109,7 @@ function FlightRow({ f, compact }: { f: Flight; compact: boolean }) {
         <span class="meta">
           {fmtTime(f.start)} – {fmtTime(f.end)} · {t("flight.clips", { n: f.clips.length })} · <span class="num">{fmtDur(f.duration)}</span> · <span class="num">{fmtSize(f.clips.reduce((x, c) => x + c.size, 0) || f.size)}</span>
         </span>
+        {(app.idx?.aircraft.length ?? 0) > 1 && <span class="chip aircraft" title={app.idx!.aircraft.find((x) => x.id === f.aircraft)?.model}><Drone size={12} strokeWidth={2} /> {f.aircraft}</span>}
         <StatusChip f={f} job={running} />
       </div>
       <div class="thumbs" style={compact ? undefined : { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
@@ -125,20 +129,6 @@ function FlightRow({ f, compact }: { f: Flight; compact: boolean }) {
 
 // 카드 아래 작업 단계: 드론 병합 · 고글 · HUD · (YouTube). ok = 끝남, todo = 할 일 있음, off = 해당 없음
 type StageState = "ok" | "todo" | "off";
-// 대기 중인 비행을 한 번에: 병합 + HUD 영상 (비행마다 차례로, 중단 가능)
-function BatchButton() {
-  const app = useApp();
-  const todo = useMemo(() => app.batchTodo(), [app.lib, app.state.prefs, app.state.goggles, app.idx]);
-  if (!todo.length) return null;
-  const nMerge = todo.filter((x) => x.f.status === "pending").length;
-  const nHud = todo.filter((x) => x.overlay).length;
-  return (
-    <button class="clay-btn batch-btn" disabled={!!app.job} onClick={app.runAll} title={t("batch.hint", { a: nMerge, b: nHud })}>
-      <Layers size={16} strokeWidth={2} /> {t("batch.run", { n: todo.length })}
-    </button>
-  );
-}
-
 export function stagesOf(app: ReturnType<typeof useApp>, f: Flight) {
   const out: { key: string; icon: preact.ComponentChild; state: StageState; label: string }[] = [];
   const multi = f.clips.length > 1;
@@ -155,11 +145,11 @@ export function stagesOf(app: ReturnType<typeof useApp>, f: Flight) {
     : app.gogglesMergeNeeded(f) ? ["todo", t("stage.gogTodo", { n: linked })]
     : ["ok", t("stage.gogMerged", { n: linked })];
   out.push({ key: "goggles", icon: <Glasses size={13} strokeWidth={2} />, state: gog[0], label: gog[1] });
-  if (app.idx?.logs.length || app.dirs?.logsExt) {
+  if (app.idx?.logs.length || app.dirs?.logs) {
     const l = app.logOf(f);
     out.push({ key: "log", icon: <ScrollText size={13} strokeWidth={2} />, state: l ? "ok" : "off", label: l ? t("stage.logOk", { d: fmtDur(l.duration) }) : t("stage.logNone") });
   }
-  out.push({ key: "hud", icon: <Gauge size={13} strokeWidth={2} />, state: f.overlay ? "ok" : "off", label: f.overlay ? t("stage.hudDone") : t("stage.hudTodo") });
+  out.push({ key: "hud", icon: <Gauge size={13} strokeWidth={2} />, state: f.overlay ? "ok" : app.stepsOf(f).hud === "todo" ? "todo" : "off", label: f.overlay ? t("stage.hudDone") : t("stage.hudTodo") });
   if (app.config.youtube) {
     const up = !!(f.youtubeId || f.overlayYoutubeId);
     out.push({ key: "yt", icon: <CloudUpload size={13} strokeWidth={2} />, state: up ? "ok" : "off", label: up ? t("stage.ytDone") : t("stage.ytTodo") });
@@ -184,6 +174,7 @@ function Stages({ f }: { f: Flight }) {
 
 export function StatusChip({ f, job }: { f: Flight; job: Job | null }) {
   if (job) return <span class="chip run"><Spinner size={13} /> {t("status.running")}</span>;
+  if (f.missing) return <span class="chip pending" title={f.output?.name}>{t("flight.missing")}</span>;
   if (f.status === "pending") return <span class="chip pending">{f.clips.length > 1 ? t("status.pending") : t("status.single")}</span>;
   if (f.overlay) return <span class="chip overlay"><Gauge size={13} strokeWidth={2} /> {t("status.overlay")}</span>;
   return <span class="chip done"><CircleCheck size={13} strokeWidth={2} /> {t("status.done")}</span>;

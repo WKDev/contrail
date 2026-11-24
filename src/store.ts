@@ -1,14 +1,7 @@
-// 폴더 구조 + 상태 파일(dji_state.json) 관리. File System Access API (Chrome/Edge 전용).
-//
-//   <루트>/            1. 병합대기 (SD카드에서 복사한 원본 DJI_*.MP4/.LRF/.SRT)
-//   <루트>/2_ready/    2. 병합완료 = 업로드 대기
-//   <루트>/3_uploaded/ 3. 업로드 완료
-//   <루트>/_sources/   병합에 사용된 원본 (확인 후 삭제해도 됨)
-//   <루트>/_excluded/  자동/수동 제외된 클립
+// 상태 파일(dji_state.json) 관리. File System Access API (Chrome/Edge 전용).
+// 폴더 역할(드론 원본·고글 원본·결과 폴더)은 roles.ts. 상태 파일은 프로젝트 폴더에 둔다.
 import type { Override } from "./plan.ts";
-import { t as msg } from "./i18n.ts";
 
-export const DIRS = { ready: "2_ready", uploaded: "3_uploaded", sources: "_sources", excluded: "_excluded", goggles: "goggles" } as const;
 export const STATE_FILE = "dji_state.json";
 export const telemetryFile = (videoName: string) => `${videoName}.telemetry.json`;
 export const RAW_RE = /^(DJI_\d{14}_\d{4}_D)\.(MP4|LRF|SRT)$/i;
@@ -26,6 +19,7 @@ export interface VideoRecord {
   clipDurations?: number[]; // 원본 클립별 길이 (병합 막대 표시용)
   joinReasons?: ("auto" | "scene" | "manual")[]; // 이음매별 병합 사유
   verified?: { frames: number; sourceFrames: number; duration: number };
+  aircraft?: string; // 기체 id (없으면 결과 파일이 있는 기체)
 }
 
 // 비행별 오버레이 설정 (key = 첫 클립 stem)
@@ -89,6 +83,8 @@ export interface FlightPrefs {
   bottom: number;
 }
 export const defaultPrefs = (): FlightPrefs => ({ instruments: true, map: true, goggles: true, top: 0, bottom: 0.13 });
+// 비행 데이터(GPS·자세)가 없는 기체(O4 등)는 계기·지도를 기본으로 끄고 고글 OSD 만
+export const prefsDefault = (hasTelemetry: boolean): FlightPrefs => ({ ...defaultPrefs(), ...(hasTelemetry ? {} : { instruments: false, map: false }) });
 
 export interface GogglesLink {
   file: string; // goggles/ 안의 파일명
@@ -107,8 +103,17 @@ export interface State {
   remote?: Record<string, string>; // YouTube 동기화 결과: 원본 MP4 파일명 → videoId
   prefs?: Record<string, FlightPrefs>;
   goggles?: Record<string, GogglesLink[] | GogglesLink>; // flightId → 고글 연결 (클립마다 하나씩일 수 있음; 예전 형식은 단일 객체)
-  layout?: Layout; // 폴더 전체에 적용되는 HUD/OSD 배치
+  layout?: Layout; // 예전: 프로젝트 전체 HUD/OSD 배치 (기체별 배치가 없을 때 기본)
+  layouts?: Record<string, Layout>; // 기체별 HUD/OSD 배치
+  clock?: Record<string, Record<string, number[]>>; // 기체 → 날짜 → 배운 시계 오차들 (초, 고글 시각에 더함)
+  gogglesOwner?: Record<string, string>; // 고글 파일 → 사용자가 고른 주인 기체
   quota: { day: string; used: number };
+}
+
+// 같은 결과 이름으로 다시 만들 때: 새 내용 + 이전 업로드 기록(YouTube·재생목록·시각)은 유지
+export function mergeRecord(prev: VideoRecord | undefined, next: VideoRecord): VideoRecord {
+  if (!prev) return next;
+  return { ...next, youtubeId: next.youtubeId ?? prev.youtubeId, playlistId: next.playlistId ?? prev.playlistId, uploadedAt: next.uploadedAt ?? prev.uploadedAt };
 }
 
 export const emptyState = (): State => ({ version: 1, overrides: {}, scores: {}, videos: {}, quota: { day: "", used: 0 } });
@@ -134,8 +139,6 @@ export function writeState(root: FileSystemDirectoryHandle, s: State) {
   return writing;
 }
 
-export const subdir = (root: FileSystemDirectoryHandle, name: string) => root.getDirectoryHandle(name, { create: true });
-
 export async function listFiles(dir: FileSystemDirectoryHandle) {
   const out: Record<string, FileSystemFileHandle> = {};
   for await (const [name, h] of (dir as any).entries() as AsyncIterable<[string, FileSystemHandle]>) {
@@ -153,24 +156,6 @@ export async function exists(dir: FileSystemDirectoryHandle, name: string) {
   }
 }
 
-// 같은 볼륨이면 move() 로 즉시 이동, 미지원이면 복사 후 삭제
-export async function moveFile(from: FileSystemDirectoryHandle, name: string, to: FileSystemDirectoryHandle) {
-  if (await exists(to, name)) throw new Error(msg("err.exists", { path: `${to.name}/${name}` }));
-  const h = await from.getFileHandle(name);
-  if (typeof (h as any).move === "function") {
-    try {
-      await (h as any).move(to);
-      return;
-    } catch (e) {
-      if ((e as DOMException).name !== "NotSupportedError") throw e;
-    }
-  }
-  const src = await h.getFile();
-  const w = await (await to.getFileHandle(name, { create: true })).createWritable();
-  await src.stream().pipeTo(w);
-  await from.removeEntry(name);
-}
-
 // ---- 폴더 핸들 기억 (IndexedDB) ----
 const DB = "dji-uploader";
 function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>) {
@@ -185,16 +170,23 @@ function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<
     };
   });
 }
-export const saveRoot = (h: FileSystemDirectoryHandle) => idb("readwrite", (s) => s.put(h, "root")).catch(() => {});
-export const loadRoot = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("root")).catch(() => undefined);
-
-// 고글 녹화 폴더 (읽기 전용, 선택 사항). null = "고글 없음"으로 정함
-export const saveGogglesDir = (h: FileSystemDirectoryHandle | null) =>
-  idb<unknown>("readwrite", (s) => (h ? s.put(h, "goggles") : s.delete("goggles")) as IDBRequest<unknown>).catch(() => {});
-export const saveLogsDir = (h: FileSystemDirectoryHandle | null) =>
-  idb<unknown>("readwrite", (s) => (h ? s.put(h, "logs") : s.delete("logs")) as IDBRequest<unknown>).catch(() => {});
-export const loadLogsDir = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("logs")).catch(() => undefined);
-export const loadGogglesDir = () => idb<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get("goggles")).catch(() => undefined);
+// 프로젝트 폴더 + 사용자가 칸에서 바꾼 역할 폴더 (자동 추정한 것은 저장하지 않고 열 때마다 다시 추정)
+export interface SavedProject {
+  project: FileSystemDirectoryHandle;
+  picks: Partial<Record<"droneRaw" | "gogglesRaw" | "droneMerged" | "gogglesMerged" | "hud" | "logs", FileSystemDirectoryHandle | null>>;
+}
+export const saveProject = (v: SavedProject) => idb("readwrite", (s) => s.put(v, "project")).catch(() => {});
+const getKey = <T,>(k: string) => idb<T | undefined>("readonly", (s) => s.get(k)).catch(() => undefined);
+// 예전 버전이 기억한 드론 폴더(root)·고글 폴더·비행기록 폴더는 프로젝트로 옮겨 온다
+export async function loadProject(): Promise<SavedProject | null> {
+  const v = await getKey<SavedProject>("project");
+  if (v) return v;
+  const root = await getKey<FileSystemDirectoryHandle>("root");
+  if (!root) return null;
+  const goggles = await getKey<FileSystemDirectoryHandle>("goggles");
+  const logs = await getKey<FileSystemDirectoryHandle>("logs");
+  return { project: root, picks: { ...(goggles ? { gogglesRaw: goggles } : {}), ...(logs ? { logs } : {}) } };
+}
 
 export async function ensurePermission(h: FileSystemDirectoryHandle, mode: "read" | "readwrite" = "readwrite") {
   const opts = { mode } as const;
@@ -207,4 +199,4 @@ export const linksOf = (s: State, id: string): GogglesLink[] => {
   const v = s.goggles?.[id];
   return !v ? [] : Array.isArray(v) ? v : [v];
 };
-export const layoutOf = (s: State): Layout => ({ ...defaultLayout(), ...s.layout });
+export const layoutOf = (s: State, aircraft?: string): Layout => ({ ...defaultLayout(), ...((aircraft && s.layouts?.[aircraft]) || s.layout) });

@@ -101,6 +101,8 @@ export class TileSource {
   private session: Promise<string> | null = null;
   copyright = "";
   maxZoom = MAX_Z; // 404 를 받으면 낮아짐
+  error: string | null = null; // 세션 실패 (키 제한·API 미사용 등) — 화면에 알리기 위해 보관
+  onError?: (msg: string) => void;
   private key: string;
   private mapType: "satellite" | "roadmap";
   constructor(key: string, mapType: "satellite" | "roadmap" = "satellite") {
@@ -116,6 +118,11 @@ export class TileSource {
     }).then(async (r) => {
       if (!r.ok) throw new Error(msg("err.mapSession", { status: r.status, body: (await r.text()).slice(0, 200) }));
       return (await r.json()).session as string;
+    });
+    this.session.catch((e) => {
+      if (this.error) return;
+      this.error = (e as Error).message ?? String(e);
+      this.onError?.(this.error);
     });
     return this.session;
   }

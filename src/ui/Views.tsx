@@ -23,28 +23,32 @@ export function GogglesView() {
   const app = useApp();
   const list = app.idx?.goggles ?? [];
   const flights = app.lib?.flights ?? [];
+  const multi = (app.idx?.aircraft.length ?? 0) > 1;
   const rows = useMemo(
     () =>
       list.map((g) => {
         const linked = flights.find((f) => linksOf(app.state, f.id).some((l) => l.file === g.name));
-        const cand = linked ? null : flights.find((f) => matchGogglesForClips(f.clips, [g]).length > 0);
-        return { g, linked, cand };
+        const owner = app.ownerOf(g.name);
+        const cand = linked ? null : flights.find((f) => f.aircraft === owner?.aircraft && matchGogglesForClips(f.clips, [g]).length > 0);
+        // 직접 맞출 비행 후보: 시각이 가까운 순 5개
+        const near = [...flights].sort((a, b) => Math.abs(a.start - g.start) - Math.abs(b.start - g.start)).slice(0, 5);
+        return { g, linked, cand, owner, near };
       }),
-    [list, flights, app.state.goggles],
+    [list, flights, app.state.goggles, app.state.gogglesOwner, app.state.clock],
   );
   return (
     <>
-      <ViewHead title={t("nav.goggles")} hint={app.dirs?.gogglesExt ? t("gog.viewHintLinked", { name: app.dirs.gogglesExt.name }) : t("gog.noneHint")}>
-        <button class="soft-btn" onClick={app.linkGogglesFolder} disabled={!!app.job}><FolderOpen size={15} /> {app.dirs?.gogglesExt ? t("gfolder.change") : t("gfolder.pick")}</button>
-        <button class="soft-btn" onClick={() => app.addGoggles("folder")} disabled={!!app.job} title={t("gog.fromSdHint")}><Glasses size={15} /> {t("gog.fromSd")}</button>
-        <button class="soft-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}><Plus size={15} /> {t("gog.fromFiles")}</button>
+      <ViewHead title={t("nav.goggles")} hint={app.dirs?.gogglesRaw ? t("gog.viewHintLinked", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}>
+        <button class="soft-btn" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={15} /> {app.dirs?.gogglesRaw ? t("gfolder.change") : t("gfolder.pick")}</button>
+        <button class="soft-btn" onClick={() => app.addGoggles("folder")} disabled={app.busy} title={t("gog.fromSdHint")}><Glasses size={15} /> {t("gog.fromSd")}</button>
+        <button class="soft-btn" onClick={() => app.addGoggles("files")} disabled={app.busy}><Plus size={15} /> {t("gog.fromFiles")}</button>
       </ViewHead>
       <div class="scroll">
         {!rows.length ? (
           <div class="empty"><Glasses size={36} strokeWidth={1.4} /><p>{t("gog.listEmpty")}</p></div>
         ) : (
           <ul class="plain-list">
-            {rows.map(({ g, linked, cand }) => {
+            {rows.map(({ g, linked, cand, owner, near }) => {
               const f = linked ?? cand;
               const link = linked ? linksOf(app.state, linked.id).find((l) => l.file === g.name) ?? null : null;
               return (
@@ -54,6 +58,22 @@ export function GogglesView() {
                     <b class="mono">{g.name}{g.linked && <span class="tag">{t("gog.inFolder")}</span>}</b>
                     <span class="muted small num">{fmtDay(g.start)} {fmtTime(g.start)} · {fmtDur(g.duration)} · {g.width}×{g.height}</span>
                   </div>
+                  {multi && owner?.aircraft && (
+                    <span class="tag" title={t(`gog.owner_${owner.by}` as any)}>{owner.aircraft} · {t(`gog.owner_${owner.by}` as any)}</span>
+                  )}
+                  {multi && !linked && (owner?.by === "ambiguous" || owner?.by === "none" || owner?.by === "manual") && (
+                    <span class="gog-owner">
+                      {(app.idx?.aircraft ?? []).map((a) => (
+                        <button key={a.id} class={`soft-btn sm ${owner?.aircraft === a.id ? "on" : ""}`} onClick={() => app.setGogglesOwner(g.name, owner?.aircraft === a.id ? null : a.id)} disabled={app.busy}>{a.id}</button>
+                      ))}
+                    </span>
+                  )}
+                  {!f && (
+                    <select class="neu-inset small" aria-label={t("gog.pickFlight")} disabled={app.busy} onChange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) app.linkGogglesTo(g.name, v); }}>
+                      <option value="">{t("gog.pickFlight")}</option>
+                      {near.map((x) => <option key={x.id} value={x.id}>{x.aircraft !== "default" ? `${x.aircraft} · ` : ""}{fmtDay(x.start)} {fmtTime(x.start)}</option>)}
+                    </select>
+                  )}
                   {f ? (
                     <button class="soft-btn sm" onClick={() => { app.setView("all"); app.select(f.id); }}>
                       {t("gog.matched", { flight: flightTitle(f, app.state, (n) => `${fmtDay(f.start)} ${t("flight", { n })}`) })}
@@ -77,9 +97,7 @@ export function ExcludedView() {
   const list = app.lib?.excluded ?? [];
   return (
     <>
-      <ViewHead title={t("excluded.title")} hint={t("excluded.hint")}>
-        <button class="soft-btn" onClick={app.tidyExcluded} disabled={!list.some((x) => x.dir === "root") || !!app.job}>{t("excluded.tidy")}</button>
-      </ViewHead>
+      <ViewHead title={t("excluded.title")} hint={t("excluded.hint")} />
       <div class="scroll">
         {!list.length ? (
           <div class="empty"><EyeOff size={36} strokeWidth={1.4} /><p>{t("empty.noneHere")}</p></div>
@@ -99,7 +117,7 @@ export function ExcludedView() {
                   </div>
                   <button
                     class="soft-btn sm"
-                    onClick={() => (x.dir === "excluded" ? app.restoreExcluded(x.name) : app.setOverride(x.name, "excluded", false))}
+                    onClick={() => app.setOverride(x.name, "excluded", false)}
                   >
                     <RotateCcw size={14} /> {t("excluded.restore")}
                   </button>
@@ -125,8 +143,8 @@ export function UploadView() {
     <>
       <ViewHead title={t("up.title")} hint={t("up.quota", { u: used.toLocaleString(), d: app.config.dailyQuota.toLocaleString(), n: Math.max(0, Math.floor(app.quotaLeft() / app.perUpload)) })}>
         {app.account ? <span class="chip done">{app.account}</span> : <button class="soft-btn" onClick={app.ytLogin}>{t("up.login")}</button>}
-        <button class="soft-btn" onClick={app.ytSync} disabled={!!app.job}><RefreshCw size={14} /> {t("up.sync")}</button>
-        <button class="soft-btn" onClick={() => app.ytUpload(queue)} disabled={!queue.length || !!app.job}><CloudUpload size={16} /> {t("up.queue")} ({queue.length})</button>
+        <button class="soft-btn" onClick={app.ytSync} disabled={app.busy}><RefreshCw size={14} /> {t("up.sync")}</button>
+        <button class="soft-btn" onClick={() => app.ytUpload(queue)} disabled={!queue.length || app.busy}><CloudUpload size={16} /> {t("up.queue")} ({queue.length})</button>
       </ViewHead>
       <div class="scroll">
         <ul class="plain-list">
@@ -140,13 +158,13 @@ export function UploadView() {
               {f.youtubeId ? (
                 <a class="chip done" href={`https://youtu.be/${f.youtubeId}`} target="_blank" rel="noreferrer">{t("up.original")} <ExternalLink size={12} strokeWidth={2} /></a>
               ) : f.output?.ref ? (
-                <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")}</button>
+                <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")}</button>
               ) : null}
               {f.overlay &&
                 (f.overlayYoutubeId ? (
                   <a class="chip done" href={`https://youtu.be/${f.overlayYoutubeId}`} target="_blank" rel="noreferrer">{t("up.overlay")} <ExternalLink size={12} strokeWidth={2} /></a>
                 ) : (
-                  <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")}</button>
+                  <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")}</button>
                 ))}
             </li>
           ))}

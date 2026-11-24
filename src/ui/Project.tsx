@@ -32,6 +32,9 @@ export function Project({ f }: { f: Flight }) {
   const [tel, setTel] = useState<Telemetry | null | undefined>(undefined);
   const [srcs, setSrcs] = useState<{ files: { file: File; dur: number }[]; kind: "overlay" | "output" | "proxy" } | null>(null);
   const gog = app.gogglesOf(f);
+  // 배치는 기체별 (Betaflight OSD 등 기체마다 위치·배율이 다름)
+  const layout = app.layoutFor(f.aircraft);
+  const saveLayout = useMemo(() => (l: Parameters<typeof app.setLayout>[0]) => app.setLayout(l, f.aircraft), [f.aircraft, app.setLayout]);
   const [tab, setTab] = useState<Tab>(f.status === "pending" && f.clips.length > 1 ? "merge" : "hud");
   const [focus, setFocus] = useState<{ i: number; k: number } | null>(null);
 
@@ -110,11 +113,11 @@ export function Project({ f }: { f: Flight }) {
   const hasTel = !!tel?.t.length;
   const telKnown = tel !== undefined;
   const gogSegs: Seg[] = gog.links.filter((x) => x.info).map((x) => {
-    const view = x.link.view ?? app.layout.gogglesView ?? "inset";
+    const view = x.link.view ?? layout.gogglesView ?? "inset";
     return { file: x.info!.file, offset: x.link.offset, duration: x.info!.duration, view, stat: stats[x.link.file] };
   });
   // HUD 탭 = 위젯 편집, 고글 탭 = OSD 영역 편집 (플레이어 위에서 바로, 자동 저장)
-  const le = useLayoutEditor(app.layout, app.setLayout, !srcs ? null : tab === "hud" ? "hud" : tab === "goggles" && gogSegs.length ? "osd" : null);
+  const le = useLayoutEditor(layout, saveLayout, !srcs ? null : tab === "hud" ? "hud" : tab === "goggles" && gogSegs.length ? "osd" : null);
   const ed = le.ed;
   const hudOn = prefs.instruments || prefs.map;
   const canOverlay = (hasTel && (prefs.instruments || prefs.map)) || (prefs.goggles && gogSegs.length > 0);
@@ -179,7 +182,7 @@ export function Project({ f }: { f: Flight }) {
               prefs={prefs}
               mapsKey={app.config.mapsKey}
               goggles={(prefs.goggles || ed?.mode === "osd") && gogSegs.length ? gogSegs : null}
-              layout={ed?.draft ?? app.layout}
+              layout={ed?.draft ?? layout}
               edit={ed}
               overlay={ed && <EditOverlay ed={ed} setEd={le.setEd} />}
               gogSegs={gogSegs}
@@ -233,12 +236,13 @@ export function Project({ f }: { f: Flight }) {
                 )}
                 <ClipOrder f={f} focus={focus} />
                 <p class="note"><ShieldCheck size={14} strokeWidth={2} /> {t("merge.lossless")}</p>
-                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `2_ready/${f.output.name}` })}</p>}
+                {f.output && f.status === "done" && <p class="note"><FolderOpen size={14} strokeWidth={2} /> {t("out.location", { path: `${f.aircraft !== "default" ? `${f.aircraft}/` : ""}${f.output.ref?.dir === "raw" ? app.dirOf(f).raw.name : app.dirOf(f).merged.name}/${f.output.name}` })}</p>}
               </>
             )}
 
             {tab === "hud" && (
               <>
+                {app.hasTelemetry[f.aircraft] === false && <p class="note">{t("hud.noTelemetry")}</p>}
                 <Toggle
                   on={hudOn && (hasTel || !telKnown)}
                   disabled={telKnown && !hasTel}
@@ -298,7 +302,7 @@ function RunBar({ f, job, canOverlay }: { f: Flight; job: Job | null; canOverlay
       </div>
     );
   }
-  const busy = !!app.job;
+  const busy = app.busy;
   if (f.status === "pending") {
     return (
       <div class="runbar">
@@ -368,6 +372,11 @@ function Player({ f, srcs, burned, tel, prefs, mapsKey, goggles, layout, edit, o
   const [on, setOn] = useState(true);
   const track = useMemo(() => (tel ? buildTrack(tel) : null), [tel]);
   const tiles = useMemo(() => (mapsKey && track?.t.length ? new TileSource(mapsKey) : null), [mapsKey, track]);
+  const [mapErr, setMapErr] = useState<string | null>(null);
+  useEffect(() => {
+    setMapErr(tiles?.error ?? null);
+    if (tiles) tiles.onError = setMapErr;
+  }, [tiles]);
   const gogFrame = useGogglesVideo(goggles);
   const osd = useMemo(() => new OsdCompositor(), []);
   const urls = useMemo(() => srcs.map((s) => URL.createObjectURL(s.file)), [srcs]);
@@ -458,6 +467,7 @@ function Player({ f, srcs, burned, tel, prefs, mapsKey, goggles, layout, edit, o
 
   return (
     <div class="player">
+      {mapErr && <p class="note warn map-err">{t("map.failed", { msg: mapErr, origin: location.origin })}</p>}
       <div class={`player-frame ${edit ? "editing" : ""}`} onClick={edit ? undefined : toggle}>
         <div class="player-box">
           <video
@@ -751,14 +761,14 @@ function GogglesPanel({ f, job }: { f: Flight; job: Job | null }) {
           {candidates.length ? (
             <>
               <span>{t("gog.candidate", { name: candidates.map((c) => c.name).join(", ") })}</span>
-              <button class="soft-btn sm" onClick={() => app.syncGogglesFor(f, candidates)} disabled={!!app.job}>{t("gog.sync")}</button>
+              <button class="soft-btn sm" onClick={() => app.syncGogglesFor(f, candidates)} disabled={app.busy}>{t("gog.sync")}</button>
             </>
           ) : (
             <>
-              <span><b>{t("gog.none")}</b><br /><small>{app.dirs?.gogglesExt ? t("gog.noneInFolder", { name: app.dirs.gogglesExt.name }) : t("gog.noneHint")}</small></span>
+              <span><b>{t("gog.none")}</b><br /><small>{app.dirs?.gogglesRaw ? t("gog.noneInFolder", { name: app.dirs.gogglesRaw.name }) : t("gog.noneHint")}</small></span>
               <div class="gog-add">
-                {!app.dirs?.gogglesExt && <button class="soft-btn sm" onClick={app.linkGogglesFolder} disabled={!!app.job}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
-                <button class="text-btn" onClick={() => app.addGoggles("files")} disabled={!!app.job}>{t("gog.fromFiles")}</button>
+                {!app.dirs?.gogglesRaw && <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={14} /> {t("gfolder.pick")}</button>}
+                <button class="text-btn" onClick={() => app.addGoggles("files")} disabled={app.busy}>{t("gog.fromFiles")}</button>
               </div>
             </>
           )}
@@ -774,12 +784,12 @@ function LogSummary({ f }: { f: Flight }) {
   const app = useApp();
   const l = app.logOf(f);
   if (!l) {
-    if (!app.idx?.logs.length && !app.dirs?.logsExt)
+    if (!app.idx?.logs.length && !app.dirs?.logs)
       return (
         <section class="logsum neu-inset empty">
           <ScrollText size={16} strokeWidth={1.75} />
           <span class="grow small">{t("flog.noneHint")}</span>
-          <button class="soft-btn sm" onClick={app.linkLogsFolder} disabled={!!app.job}><FolderOpen size={14} /> {t("flog.pick")}</button>
+          <button class="soft-btn sm" onClick={() => app.setShowSetup(true)} disabled={app.busy}><FolderOpen size={14} /> {t("flog.pick")}</button>
         </section>
       );
     return <p class="note"><ScrollText size={14} strokeWidth={2} /> {t("flog.noMatch")}</p>;
@@ -828,13 +838,13 @@ function YoutubeRow({ f }: { f: Flight }) {
         {f.youtubeId ? (
           <a class="chip done" href={`https://youtu.be/${f.youtubeId}`} target="_blank" rel="noreferrer">{t("up.original")} <ExternalLink size={12} strokeWidth={2} /></a>
         ) : (
-          <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")} {t("up.one")}</button>
+          <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: false }])}>{t("up.original")} {t("up.one")}</button>
         )}
         {f.overlay &&
           (f.overlayYoutubeId ? (
             <a class="chip done" href={`https://youtu.be/${f.overlayYoutubeId}`} target="_blank" rel="noreferrer">{t("up.overlay")} <ExternalLink size={12} strokeWidth={2} /></a>
           ) : (
-            <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")} {t("up.one")}</button>
+            <button class="soft-btn sm" disabled={app.busy} onClick={() => app.ytUpload([{ flight: f, overlay: true }])}>{t("up.overlay")} {t("up.one")}</button>
           ))}
       </div>
     </section>
@@ -907,7 +917,7 @@ function GogglesMergeRow({ f, job }: { f: Flight; job: Job | null }) {
       ) : (
         <div class="row">
           <span class="note grow">{t("gm.todo", { n: segs.length })}</span>
-          <button class="soft-btn sm" disabled={!!app.job} onClick={() => app.run(f, { merge: false, overlay: false, goggles: true })}>
+          <button class="soft-btn sm" disabled={app.busy} onClick={() => app.run(f, { merge: false, overlay: false, goggles: true })}>
             <Merge size={14} /> {t("gm.run")}
           </button>
         </div>
